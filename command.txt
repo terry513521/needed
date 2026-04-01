@@ -1,0 +1,42 @@
+--------- btcli installation
+python3 -m venv btcli-env
+source btcli-env/bin/activate
+
+pip install bittensor
+pip install bittensor-cli
+
+--------- wallet operation
+btcli wallet new
+btcli wallet new --wallet.name mywallet --wallet.hotkey myhotkey
+ls ~/.bittensor/wallets/
+btcli wallet list
+btcli wallet balance --wallet.name peter
+btcli wallet new_hotkey --wallet.name mywallet --wallet.hotkey worker2
+btcli wallet overview --wallet.name peter
+
+btcli view dashboard
+btcli subnet list
+
+
+-------- registration
+btcli subnet register --netuid 100  --wallet.name peter --wallet.hotkey 100
+
+
+--------
+pip freeze > requirements.txt
+
+------- add into PATH
+export PATH="/root/workspace/term-challenge/target/release:$PATH"
+export PATH="/root/workspace/work/term-challenge/target/release:$PATH"
+
+term-cli status --agent-hash 7c1e83c7ce5bff940ea77170d860ef13b8b95ff9acc1a93f38d956036ffb4959
+
+export CHUTES_API_KEY=cpk_033d72ed74bc4269b20008982f626427.d06c984276045de6adcdcad26d41262a.Lkg4aikNuESmXuETfq7Tj7j9Qx2tyCfQ
+python3 scripts/build_curated_zillow_dataset.py --chutes
+
+btcli subnet metagraph --netuid 100
+
+export PATH="/root/workspace/work/data-fabrication/target/release:$PATH"
+
+data-cli monitor
+
