@@ -41,6 +41,7 @@ numpy==2.4.3
 packaging==26.0
 plotille==6.0.5
 plotly==6.6.0
+python-dotenv==1.1.0
 propcache==0.4.1
 py==1.11.0
 pycryptodome==3.23.0

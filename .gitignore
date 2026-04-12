@@ -56,3 +56,8 @@ Thumbs.db
 # Project specific
 *.bak
 *.backup
+hotkeys.yaml
+
+# frontend
+frontend/node_modules/
+frontend/dist/

@@ -44,3 +44,56 @@ async def main():
 
 asyncio.run(main())
 ```
+
+## Taostats + hotkey dashboard
+
+The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **FastAPI** backend (`dashboard/app.py`) over HTTP (`/api/...`). That split keeps chain and Taostats logic on the server while the browser only renders state and issues actions—easy to extend, type-check, and test.
+
+**Requirements**
+
+- **Node.js** (for the frontend) and **Python** venv with this repo’s dependencies.
+- Taostats API key: `TAOSTATS_API_KEY` (see [Taostats API docs](https://docs.taostats.io/reference)). Use `.env` at the repo root (see `.env.example`); `python-dotenv` loads it when the backend starts.
+- For hotkeys: copy `hotkeys.example.yaml` to `hotkeys.yaml` and list `netuid`, `ss58`, and optional `name`.
+
+**Optional environment variables** (backend / `.env`):
+
+| Variable | Purpose |
+|----------|---------|
+| `TAOSTATS_API_URL` | Taostats API base URL (default `https://api.taostats.io`) |
+| `TAOSTATS_SNAPSHOT_PATH` | Where subnet snapshots JSON is stored (default `~/.bittensor-tools/taostats_snapshots.json`) |
+| `TAOSTATS_MIN_DIVERGENCE_PCT` | Alert threshold in percentage points (default `2`) |
+| `TAOSTATS_LOOKBACK_SEC` / `TAOSTATS_LOOKBACK_TOLERANCE_SEC` | Baseline age and match tolerance (defaults `86400` / `7200`) |
+| `TAOSTATS_REQUEST_TIMEOUT` | HTTP timeout seconds for Taostats (default `60`) |
+| `BITTENSOR_TOOLS_HOTKEYS` | Path to `hotkeys.yaml` if not at repo root |
+| `BITTENSOR_NETWORK` | Overrides `network` in `hotkeys.yaml` (e.g. `finney`) |
+| `DASHBOARD_HOST` / `DASHBOARD_PORT` | Bind address for the API (default `127.0.0.1` / `8765`) |
+| `DASHBOARD_CORS_ORIGINS` | Comma-separated origins for browser access to the API (defaults include `http://127.0.0.1:5173` for Vite) |
+
+`GET /api/config` returns the effective non-secret settings as JSON.
+
+**Development** (two terminals: API + Vite):
+
+```bash
+cp .env.example .env   # set TAOSTATS_API_KEY
+source venv/bin/activate
+uvicorn dashboard.app:app --reload --host 127.0.0.1 --port 8765
+
+# other terminal:
+cd frontend && npm install && npm run dev
+```
+
+Open the URL Vite prints (usually http://127.0.0.1:5173). Vite **proxies** `/api` to `http://127.0.0.1:8765`. Override the proxy target with env `VITE_PROXY_TARGET` if your API runs elsewhere.
+
+**Production-style** (single origin: API serves the built SPA):
+
+```bash
+cd frontend && npm run build
+source venv/bin/activate
+uvicorn dashboard.app:app --host 127.0.0.1 --port 8765
+```
+
+Then open http://127.0.0.1:8765 — the same server serves `frontend/dist` and `/api`. If `frontend/dist` is missing, `GET /` returns a small JSON hint instead of the UI.
+
+Until a snapshot exists from about one lookback period ago, the UI explains that history is still building (refresh periodically or leave a scheduler running).
+
+**Note:** The default rule compares **two day-over-day percentage changes** (emission vs. burn), not absolute TAO amounts. If you need a different metric (for example dTAO `alpha_rewards` from `/api/dtao/subnet_emission/v1`), say what you want matched and we can extend the client.

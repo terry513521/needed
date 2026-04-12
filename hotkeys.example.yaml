@@ -1,0 +1,7 @@
+# Copy to hotkeys.yaml and edit. Or set BITTENSOR_TOOLS_HOTKEYS to this file's path.
+network: finney
+
+hotkeys:
+  - name: 46
+    netuid: 46
+    ss58: "5CoZrvwZGwU8QJHazmoX12h2Hdw8JaoCL529u3b7RUFNDwRT"

@@ -1,0 +1,150 @@
+:root {
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --accent: #3d9cf5;
+  --warn: #e6a23c;
+  --ok: #67c23a;
+  --bad: #f56c6c;
+  --border: #2a3545;
+}
+
+#root {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem 0;
+  font-weight: 600;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.sub.warn-text {
+  color: var(--warn);
+}
+
+section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.badge.ok {
+  background: rgba(103, 194, 58, 0.2);
+  color: var(--ok);
+}
+
+.badge.bad {
+  background: rgba(245, 108, 108, 0.2);
+  color: var(--bad);
+}
+
+.msg {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.msg.warn,
+.warn {
+  color: var(--warn);
+}
+
+.inline-warn {
+  margin-left: 0.25rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-size: 0.82rem;
+  background: var(--bg);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+code.hk {
+  word-break: break-all;
+  display: inline-block;
+  max-width: 100%;
+}
