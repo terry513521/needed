@@ -28,23 +28,34 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_REPO_ROOT / ".env")
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from dashboard.hotkeys import DEFAULT_CONFIG as HOTKEYS_DEFAULT_PATH, check_hotkeys
+from dashboard.hotkeys import (
+    DEFAULT_CONFIG as HOTKEYS_DEFAULT_PATH,
+    check_hotkeys,
+    list_configured_hotkeys,
+)
 from dashboard.taostats_client import (
     DEFAULT_MIN_DIVERGENCE_PCT,
     DEFAULT_SNAPSHOT_PATH,
     LOOKBACK_TOLERANCE_SEC,
     REQUEST_TIMEOUT,
     TARGET_LOOKBACK_SEC,
+    fetch_subnet_overview,
     run_taostats_cycle,
 )
 
 _SPA_DIST = _REPO_ROOT / "frontend" / "dist"
 _SPA_ASSETS = _SPA_DIST / "assets"
+
+
+class HotkeyCheckBody(BaseModel):
+    netuid: int | None = None
+    ss58: str | None = Field(None, description="SS58 hotkey; with netuid, check only this key")
 
 
 def _cors_origins() -> list[str]:
@@ -96,6 +107,21 @@ def api_config() -> dict:
     }
 
 
+@app.get("/api/taostats/overview")
+def api_taostats_overview() -> dict:
+    """All subnets: name, alpha price (pool), emission τ/day, reg cost τ, incentive_burn; no snapshot write."""
+    key = os.environ.get("TAOSTATS_API_KEY", "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="Set TAOSTATS_API_KEY in the environment or `.env` (Taostats API key).",
+        )
+    try:
+        return fetch_subnet_overview(key)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
 @app.get("/api/taostats/divergence")
 def api_taostats_divergence() -> dict:
     key = os.environ.get("TAOSTATS_API_KEY", "").strip()
@@ -110,10 +136,22 @@ def api_taostats_divergence() -> dict:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+@app.get("/api/hotkeys/config")
+def api_hotkeys_config() -> dict:
+    """Hotkeys from YAML (no chain query)."""
+    return list_configured_hotkeys()
+
+
 @app.post("/api/hotkeys/check")
-def api_hotkeys_check() -> dict:
+def api_hotkeys_check(
+    body: HotkeyCheckBody = Body(default_factory=HotkeyCheckBody),
+) -> dict:
+    """Check all hotkeys, or one when both `netuid` and `ss58` are set."""
     try:
-        results = check_hotkeys()
+        if body.netuid is not None and body.ss58 and body.ss58.strip():
+            results = check_hotkeys(only_netuid=body.netuid, only_ss58=body.ss58.strip())
+        else:
+            results = check_hotkeys()
         return {"results": results}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e)) from e

@@ -13,6 +13,10 @@ import requests
 
 TAOSTATS_BASE = os.environ.get("TAOSTATS_API_URL", "https://api.taostats.io").rstrip("/")
 SUBNET_LATEST = f"{TAOSTATS_BASE}/api/subnet/latest/v1"
+POOL_LATEST = f"{TAOSTATS_BASE}/api/dtao/pool/latest/v1"
+
+# ~12s blocks → 7200 blocks/day on Finney (override if your network differs)
+BLOCKS_PER_DAY = int(os.environ.get("TAOSTATS_BLOCKS_PER_DAY", "7200"))
 
 _snap = os.environ.get("TAOSTATS_SNAPSHOT_PATH", "").strip()
 DEFAULT_SNAPSHOT_PATH = (
@@ -91,6 +95,134 @@ def fetch_latest_subnets(api_key: str, timeout: float | None = None) -> list[dic
             break
         page = int(next_page)
     return out
+
+
+def fetch_latest_pools(api_key: str, timeout: float | None = None) -> list[dict[str, Any]]:
+    """dTAO pool snapshot: price (TAO per alpha), name, symbol, etc."""
+    if timeout is None:
+        timeout = REQUEST_TIMEOUT
+    headers = _auth_headers(api_key)
+    out: list[dict[str, Any]] = []
+    page = 1
+    for _ in range(50):
+        r = requests.get(
+            POOL_LATEST,
+            headers=headers,
+            params={"page": page, "limit": 200, "order": "netuid_asc"},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        body = r.json()
+        data = body.get("data") or []
+        out.extend(data)
+        pag = body.get("pagination") or {}
+        next_page = pag.get("next_page")
+        if not next_page:
+            break
+        page = int(next_page)
+    return out
+
+
+def _parse_float_str(s: Any) -> float | None:
+    if s is None:
+        return None
+    try:
+        return float(str(s).strip())
+    except ValueError:
+        return None
+
+
+def emission_tau_per_day_from_subnet_row(subnet_row: dict[str, Any]) -> float | None:
+    """
+    TAO/day into the subnet from Taostats subnet/latest `projected_emission`.
+
+    Per Taostats docs (Subnet Statistics), subnet emission is the share of TAO flowing into
+    the subnet each block. `projected_emission` is that rate in τ/block (string or number).
+    Daily τ ≈ τ/block × blocks/day. Result is ≥ 0.
+    """
+    tau_per_block = _parse_float_str(subnet_row.get("projected_emission"))
+    if tau_per_block is None or tau_per_block <= 0:
+        return None
+    tau_per_day = tau_per_block * float(BLOCKS_PER_DAY)
+    return float(max(0.0, tau_per_day))
+
+
+def build_subnet_overview(
+    subnet_rows: list[dict[str, Any]],
+    pool_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Merge subnet/latest + pool/latest by netuid."""
+    pools_by_uid: dict[int, dict[str, Any]] = {}
+    for row in pool_rows:
+        uid = row.get("netuid")
+        if uid is not None:
+            pools_by_uid[int(uid)] = row
+
+    merged: list[dict[str, Any]] = []
+    for row in subnet_rows:
+        uid = row.get("netuid")
+        if uid is None:
+            continue
+        netuid = int(uid)
+        pool = pools_by_uid.get(netuid)
+        name = None
+        symbol = None
+        price_tao: float | None = None
+        if pool:
+            name = pool.get("name")
+            symbol = pool.get("symbol")
+            price_tao = _parse_float_str(pool.get("price"))
+        emission_tau_per_day = emission_tau_per_day_from_subnet_row(row)
+        # Fraction of miner incentive burned to owner (0–1), per chain hyperparams
+        incentive_burn = _parse_float_str(row.get("incentive_burn"))
+        raw_reg = row.get("neuron_registration_cost")
+        if raw_reg is None:
+            neuron_registration_cost_tao: float | None = None
+        else:
+            neuron_registration_cost_tao = _parse_int(raw_reg) / 1e9
+        if name and symbol and str(symbol) != str(name):
+            label = f"{name} ({symbol})"
+        elif name:
+            label = str(name)
+        elif symbol:
+            label = str(symbol)
+        else:
+            label = f"Subnet {netuid}"
+
+        merged.append(
+            {
+                "netuid": netuid,
+                "name": label,
+                "alpha_price_tao": price_tao,
+                "emission_tau_per_day": emission_tau_per_day,
+                "neuron_registration_cost_tao": neuron_registration_cost_tao,
+                "incentive_burn_rate": incentive_burn,
+            }
+        )
+    merged.sort(key=lambda x: x["netuid"])
+    warn: str | None = None
+    if not pool_rows:
+        warn = "No pool data returned (alpha price may be missing)."
+    return merged, warn
+
+
+def fetch_subnet_overview(api_key: str) -> dict[str, Any]:
+    """Latest subnets + pool prices; does not write snapshot files."""
+    subnets = fetch_latest_subnets(api_key)
+    pool_warning: str | None = None
+    try:
+        pools = fetch_latest_pools(api_key)
+    except Exception as e:  # noqa: BLE001
+        pools = []
+        pool_warning = f"Pool API error (alpha price unavailable): {e}"
+    rows, merge_warn = build_subnet_overview(subnets, pools)
+    warnings = [w for w in (pool_warning, merge_warn) if w]
+    return {
+        "fetched_at": int(time.time()),
+        "subnets": rows,
+        "pool_warning": " ".join(warnings) if warnings else None,
+        "blocks_per_day": BLOCKS_PER_DAY,
+    }
 
 
 def rows_to_points(rows: list[dict[str, Any]]) -> dict[int, SubnetPoint]:

@@ -61,7 +61,7 @@ The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **F
 |----------|---------|
 | `TAOSTATS_API_URL` | Taostats API base URL (default `https://api.taostats.io`) |
 | `TAOSTATS_SNAPSHOT_PATH` | Where subnet snapshots JSON is stored (default `~/.bittensor-tools/taostats_snapshots.json`) |
-| `TAOSTATS_MIN_DIVERGENCE_PCT` | Alert threshold in percentage points (default `2`) |
+| `TAOSTATS_MIN_DIVERGENCE_PCT` | 24h divergence alert threshold in percentage points (default `2`) |
 | `TAOSTATS_LOOKBACK_SEC` / `TAOSTATS_LOOKBACK_TOLERANCE_SEC` | Baseline age and match tolerance (defaults `86400` / `7200`) |
 | `TAOSTATS_REQUEST_TIMEOUT` | HTTP timeout seconds for Taostats (default `60`) |
 | `BITTENSOR_TOOLS_HOTKEYS` | Path to `hotkeys.yaml` if not at repo root |
@@ -70,6 +70,8 @@ The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **F
 | `DASHBOARD_CORS_ORIGINS` | Comma-separated origins for browser access to the API (defaults include `http://127.0.0.1:5173` for Vite) |
 
 `GET /api/config` returns the effective non-secret settings as JSON.
+
+`GET /api/taostats/overview` lists all subnets using Taostats **`/api/subnet/latest/v1`** and **`/api/dtao/pool/latest/v1`**. **Emission/day (τ)** follows Taostats [Subnet Statistics](https://docs.taostats.io/docs/subnet-statistics) (TAO into the subnet): **`projected_emission`** from subnet/latest (τ per block) × **`TAOSTATS_BLOCKS_PER_DAY`** (default 7200). It is always ≥ 0 (unlike signed staking `net_flow_*` fields). **Incentive burn** is **`incentive_burn`** (0–1, shown as %). The response includes **`blocks_per_day`**. Blue % deltas in the UI are vs your previous refresh (in-memory only).
 
 **Development** (two terminals: API + Vite):
 
@@ -96,4 +98,4 @@ Then open http://127.0.0.1:8765 — the same server serves `frontend/dist` and `
 
 Until a snapshot exists from about one lookback period ago, the UI explains that history is still building (refresh periodically or leave a scheduler running).
 
-**Note:** The default rule compares **two day-over-day percentage changes** (emission vs. burn), not absolute TAO amounts. If you need a different metric (for example dTAO `alpha_rewards` from `/api/dtao/subnet_emission/v1`), say what you want matched and we can extend the client.
+**Note:** The default rule compares **two day-over-day percentage changes** (chain `emission` vs. registration burn), not absolute TAO amounts.

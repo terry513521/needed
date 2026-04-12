@@ -12,6 +12,17 @@ import yaml
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "hotkeys.yaml"
 
 
+def _entries_from_cfg(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalized rows: name, netuid, hotkey (ss58)."""
+    out: list[dict[str, Any]] = []
+    for item in cfg.get("hotkeys", []):
+        hk = (item.get("ss58") or item.get("hotkey") or "").strip()
+        netuid = int(item.get("netuid", 0))
+        name = item.get("name") or (hk[:16] + "…" if hk else "?")
+        out.append({"name": name, "netuid": netuid, "hotkey": hk})
+    return out
+
+
 def load_hotkey_config(path: Path | None = None) -> dict[str, Any]:
     p = path or Path(os.environ.get("BITTENSOR_TOOLS_HOTKEYS", str(DEFAULT_CONFIG)))
     if not p.exists():
@@ -27,15 +38,44 @@ def load_hotkey_config(path: Path | None = None) -> dict[str, Any]:
     return data
 
 
-def check_hotkeys(config_path: Path | None = None) -> list[dict[str, Any]]:
+def list_configured_hotkeys(path: Path | None = None) -> dict[str, Any]:
+    """Config only (no chain): network + hotkeys for the UI."""
+    cfg = load_hotkey_config(path)
+    return {
+        "network": cfg.get("network", "finney"),
+        "hotkeys": _entries_from_cfg(cfg),
+    }
+
+
+def check_hotkeys(
+    config_path: Path | None = None,
+    *,
+    only_netuid: int | None = None,
+    only_ss58: str | None = None,
+) -> list[dict[str, Any]]:
     cfg = load_hotkey_config(config_path)
     network = cfg.get("network", "finney")
+    entries = _entries_from_cfg(cfg)
+    if only_netuid is not None and only_ss58 is not None:
+        only_ss58 = only_ss58.strip()
+        entries = [e for e in entries if e["netuid"] == only_netuid and e["hotkey"] == only_ss58]
+        if not entries:
+            return [
+                {
+                    "name": "?",
+                    "netuid": only_netuid,
+                    "hotkey": only_ss58,
+                    "registered": False,
+                    "uid": None,
+                    "error": "hotkey not in config",
+                }
+            ]
     sub = bt.Subtensor(network=network)
     results: list[dict[str, Any]] = []
-    for item in cfg.get("hotkeys", []):
-        hk = (item.get("ss58") or item.get("hotkey") or "").strip()
-        netuid = int(item.get("netuid", 0))
-        name = item.get("name") or hk[:16] + "…"
+    for entry in entries:
+        hk = entry["hotkey"]
+        netuid = entry["netuid"]
+        name = entry["name"]
         if not hk:
             results.append(
                 {
