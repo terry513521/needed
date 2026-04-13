@@ -104,3 +104,12 @@ node
 v23.3.0
 python
 v3.12.3
+
+##Service:*
+pm2 start uvicorn --name tool-backend \
+  --interpreter python3 \
+  -- dashboard.app:app --host 127.0.0.1 --port 8765
+
+pm2 start npm --name "tool-frontend" -- run dev
+pm2 start npm --name "tool-frontend" -- run dev -- --host 0.0.0.0 --port 5731
+npm run dev -- --host 0.0.0.0 --port 5731
