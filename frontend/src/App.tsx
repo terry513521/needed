@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { fetchJson } from "./api";
 import type {
   DashboardConfig,
@@ -39,10 +39,52 @@ function formatBurnPct(rate: number | null): string {
   return `${(rate * 100).toFixed(2)}%`;
 }
 
+/** Backend snapshot/baseline timestamps are Unix seconds. */
+function formatUnixSeconds(ts: number | null | undefined): string {
+  if (ts == null || !Number.isFinite(ts)) return "—";
+  return new Date(ts * 1000).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  });
+}
+
+function formatAgeAgo(tsSec: number): string {
+  const now = Date.now() / 1000;
+  const diff = Math.max(0, now - tsSec);
+  if (diff < 45) return "just now";
+  if (diff < 3600) {
+    const m = Math.floor(diff / 60);
+    return `${m} min ago`;
+  }
+  if (diff < 86400) {
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
+  }
+  const d = Math.floor(diff / 86400);
+  return d === 1 ? "1 day ago" : `${d} days ago`;
+}
+
+/** Miner-facing τ/day after incentive burn: alpha emission (τ/day) × (1 − burn rate). */
+function actualRewardTauPerDay(alphaEmissionTauPerDay: number | null, burn: number | null): number | null {
+  if (
+    alphaEmissionTauPerDay == null ||
+    burn == null ||
+    !Number.isFinite(alphaEmissionTauPerDay) ||
+    !Number.isFinite(burn)
+  ) {
+    return null;
+  }
+  return alphaEmissionTauPerDay * (1 - burn) * 0.41;
+}
+
 function formatDeltaPct(pct: number): string {
   const sign = pct > 0 ? "+" : "";
   return `${sign}${pct.toFixed(2)}%`;
 }
+
+/** Highlight rows when |Δ emission% − Δ burn%| is strictly above this (percentage points). */
+const HIGH_DIVERGENCE_HIGHLIGHT_PP = 2;
 
 type HotkeyUiRow = {
   name: string;
@@ -55,7 +97,27 @@ type HotkeyUiRow = {
   refreshing: boolean;
 };
 
+function hotkeysConfigToUiRows(h: HotkeysConfigResponse): HotkeyUiRow[] {
+  return h.hotkeys.map((x) => ({
+    name: x.name,
+    netuid: x.netuid,
+    hotkey: x.hotkey,
+    registered: null,
+    uid: null,
+    error: null,
+    refreshing: false,
+  }));
+}
+
 type MainTab = "taostats" | "hotkeys";
+
+type OverviewDeltaRow = {
+  emission: number | null;
+  alphaEmission: number | null;
+  burn: number | null;
+  reg: number | null;
+  actualReward: number | null;
+};
 
 export default function App() {
   const [mainTab, setMainTab] = useState<MainTab>("taostats");
@@ -71,17 +133,20 @@ export default function App() {
 
   const [overviewData, setOverviewData] = useState<TaostatsOverviewResponse | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [overviewDeltas, setOverviewDeltas] = useState<
-    Record<number, { emission: number | null; burn: number | null; reg: number | null }>
-  >({});
-  const prevOverviewRef = useRef<Record<
-    number,
-    { emission: number | null; burn: number | null; reg: number | null }
-  > | null>(null);
+  const [overviewDeltas, setOverviewDeltas] = useState<Record<number, OverviewDeltaRow>>({});
+  const prevOverviewRef = useRef<Record<number, OverviewDeltaRow> | null>(null);
 
   const [hotkeyNetwork, setHotkeyNetwork] = useState<string | null>(null);
   const [hotkeyRows, setHotkeyRows] = useState<HotkeyUiRow[]>([]);
   const [hotkeysListError, setHotkeysListError] = useState<string | null>(null);
+  const [hotkeysActionError, setHotkeysActionError] = useState<string | null>(null);
+
+  const applyHotkeysConfig = useCallback((h: HotkeysConfigResponse) => {
+    setHotkeyNetwork(h.network);
+    setHotkeyRows(hotkeysConfigToUiRows(h));
+    setHotkeysListError(null);
+    setHotkeysActionError(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,21 +174,7 @@ export default function App() {
     (async () => {
       try {
         const h = await fetchJson<HotkeysConfigResponse>("/api/hotkeys/config");
-        if (!cancelled) {
-          setHotkeyNetwork(h.network);
-          setHotkeyRows(
-            h.hotkeys.map((x) => ({
-              name: x.name,
-              netuid: x.netuid,
-              hotkey: x.hotkey,
-              registered: null,
-              uid: null,
-              error: null,
-              refreshing: false,
-            })),
-          );
-          setHotkeysListError(null);
-        }
+        if (!cancelled) applyHotkeysConfig(h);
       } catch (e) {
         if (!cancelled) {
           setHotkeyRows([]);
@@ -134,20 +185,22 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyHotkeysConfig]);
 
   const applyOverviewData = useCallback((data: TaostatsOverviewResponse) => {
     const prev = prevOverviewRef.current;
-    const deltas: Record<number, { emission: number | null; burn: number | null; reg: number | null }> =
-      {};
+    const deltas: Record<number, OverviewDeltaRow> = {};
     if (prev) {
       for (const r of data.subnets) {
         const p = prev[r.netuid];
         if (!p) continue;
+        const nowAr = actualRewardTauPerDay(r.alpha_emission_tau_per_day ?? null, r.incentive_burn_rate);
         deltas[r.netuid] = {
           emission: pctDelta(p.emission, r.emission_tau_per_day),
+          alphaEmission: pctDelta(p.alphaEmission, r.alpha_emission_tau_per_day ?? null),
           burn: pctDelta(p.burn, r.incentive_burn_rate),
           reg: pctDelta(p.reg, r.neuron_registration_cost_tao),
+          actualReward: pctDelta(p.actualReward, nowAr),
         };
       }
     }
@@ -157,8 +210,10 @@ export default function App() {
         s.netuid,
         {
           emission: s.emission_tau_per_day,
+          alphaEmission: s.alpha_emission_tau_per_day ?? null,
           burn: s.incentive_burn_rate,
           reg: s.neuron_registration_cost_tao,
+          actualReward: actualRewardTauPerDay(s.alpha_emission_tau_per_day ?? null, s.incentive_burn_rate),
         },
       ]),
     );
@@ -188,13 +243,39 @@ export default function App() {
     };
   }, [applyOverviewData]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await fetchJson<TaostatsDivergenceResponse>("/api/taostats/divergence/snapshot");
+        if (cancelled) return;
+        setDivergence(snap);
+        if (snap.warning) {
+          setTaostatsWarn(snap.warning);
+          setTaostatsWarnIsError(false);
+        }
+        if (snap.from_snapshot_file && snap.snapshot_time != null) {
+          setTaostatsStatus(
+            (prev) =>
+              prev ||
+              `${snap.subnet_count} subnets · snapshot ${formatUnixSeconds(snap.snapshot_time)}`,
+          );
+        }
+      } catch {
+        /* Snapshot file missing or server error — live refresh still works. */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const refreshTaostats = useCallback(async () => {
     setTaostatsLoading(true);
     setOverviewLoading(true);
     setTaostatsStatus("Loading…");
     setTaostatsWarn("");
     setTaostatsWarnIsError(false);
-    setDivergence(null);
     setOverviewError(null);
     try {
       const [ov, j] = await Promise.all([
@@ -210,12 +291,14 @@ export default function App() {
         const hrs = j.lookback_sec != null ? Math.round(j.lookback_sec / 3600) : 24;
         setTaostatsWarn(
           j.baseline_time
-            ? `Baseline snapshot ~${hrs}h lookback (unix ${j.baseline_time}).`
+            ? `Baseline snapshot ~${hrs}h lookback (${formatUnixSeconds(j.baseline_time)}).`
             : "",
         );
         setTaostatsWarnIsError(false);
       }
-      setTaostatsStatus(`${j.subnet_count} subnets · snapshot ${j.snapshot_time ?? "—"}`);
+      const snapLabel =
+        j.snapshot_time != null ? formatUnixSeconds(j.snapshot_time) : "—";
+      setTaostatsStatus(`${j.subnet_count} subnets · snapshot ${snapLabel}`);
     } catch (e) {
       setTaostatsStatus("");
       setTaostatsWarn(e instanceof Error ? e.message : String(e));
@@ -226,6 +309,17 @@ export default function App() {
       setOverviewLoading(false);
     }
   }, [applyOverviewData]);
+
+  const highDivergenceNetuids = useMemo(() => {
+    const set = new Set<number>();
+    if (!divergence?.divergences?.length) return set;
+    for (const r of divergence.divergences) {
+      if (r.divergence_pct_points > HIGH_DIVERGENCE_HIGHLIGHT_PP) {
+        set.add(r.netuid);
+      }
+    }
+    return set;
+  }, [divergence?.divergences]);
 
   const refreshOneHotkey = useCallback(async (netuid: number, ss58: string) => {
     if (!ss58) return;
@@ -266,6 +360,24 @@ export default function App() {
       );
     }
   }, []);
+
+  const deleteHotkeyRow = useCallback(
+    async (netuid: number, ss58: string) => {
+      if (!ss58) return;
+      if (!window.confirm(`Remove this hotkey from the config file (netuid ${netuid})?`)) return;
+      setHotkeysActionError(null);
+      try {
+        const h = await fetchJson<HotkeysConfigResponse>("/api/hotkeys/remove", {
+          method: "POST",
+          body: JSON.stringify({ netuid, ss58 }),
+        });
+        applyHotkeysConfig(h);
+      } catch (e) {
+        setHotkeysActionError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [applyHotkeysConfig],
+  );
 
   const th = config?.min_divergence_pct ?? 2;
   const lookbackH = config ? Math.round(config.lookback_sec / 3600) : 24;
@@ -321,17 +433,23 @@ export default function App() {
           {config ? (
             <>
               <p className="sub">
-                <strong>All subnets</strong>: <strong>alpha price</strong> (τ/α, pool API),{" "}
-                <strong>emission/day (τ)</strong> = Taostats subnet/latest <code>projected_emission</code> (τ/block,{" "}
-                share of TAO into the subnet) × blocks/day (default {overviewData?.blocks_per_day ?? 7200},{" "}
-                <code>TAOSTATS_BLOCKS_PER_DAY</code>), always ≥ 0.                 <strong>Reg cost (τ)</strong> = <code>neuron_registration_cost</code> from subnet/latest.{" "}
-                <strong>Incentive burn</strong> = <code>incentive_burn</code> (%, chain param). Blue % =
-                change vs your last refresh (numeric columns).
+                <strong>All subnets</strong>: <strong>alpha price</strong> (τ/α, dTAO pool/latest).{" "}
+                <strong>Root TAO in (τ/day)</strong> = mainnet TAO into the subnet pool: subnet/latest{" "}
+                <code>emission</code> (rao/block ÷ 1e9) × blocks/day (default{" "}
+                {overviewData?.blocks_per_day ?? 7200}, <code>TAOSTATS_BLOCKS_PER_DAY</code>).{" "}
+                <strong>Alpha emission (τ/day)</strong> = subnet <code>alpha_rewards</code> (α/block in rao, dTAO
+                subnet_emission API) ÷ 1e9 × alpha price × blocks/day (value of emitted α in TAO).{" "}
+                <strong>Reg cost (τ)</strong> = <code>neuron_registration_cost</code>.{" "}
+                <strong>Incentive burn</strong> = <code>incentive_burn</code>.{" "}
+                <strong>Actual reward (τ/day)</strong> = alpha emission (τ/day) × (1 − burn rate). Blue % = change vs
+                your last refresh (numeric columns).
               </p>
               <p className="sub">
                 <strong>24h divergence table</strong> (below): subnets where daily % moves in emission vs
                 burn differ by ≥ <strong>{th}</strong> pp (~<strong>{lookbackH}h</strong> baseline,{" "}
-                <code>TAOSTATS_MIN_DIVERGENCE_PCT</code>).
+                <code>TAOSTATS_MIN_DIVERGENCE_PCT</code>). It loads from your on-disk snapshot when you open
+                the page; <strong>Refresh Taostats</strong> fetches live data and appends a new snapshot. Rows
+                with divergence <strong>&gt; 2</strong> pp are highlighted here and in the subnet table above.
               </p>
             </>
           ) : null}
@@ -349,14 +467,33 @@ export default function App() {
               {taostatsStatus}
             </span>
           </div>
+          {divergence?.snapshot_time != null ? (
+            <p className="msg snapshot-taken">
+              <strong>Snapshot taken</strong>: {formatUnixSeconds(divergence.snapshot_time)}
+              <span className="sub"> ({formatAgeAgo(divergence.snapshot_time)})</span>
+              {divergence.baseline_time != null ? (
+                <>
+                  {" "}
+                  · <strong>Baseline</strong>: {formatUnixSeconds(divergence.baseline_time)}
+                </>
+              ) : null}
+            </p>
+          ) : null}
           <SubnetOverviewTable
             loading={overviewLoading}
             error={overviewError}
             data={overviewData}
             deltas={overviewDeltas}
+            highlightNetuids={highDivergenceNetuids}
           />
           <h3 className="subsection-title">24h emission vs burn divergence</h3>
           <p className={taostatsWarnIsError ? "msg warn" : "msg"}>{taostatsWarn}</p>
+          {divergence?.from_snapshot_file ? (
+            <p className="msg footer-hint">
+              Loaded from your snapshot file (no Taostats request). Use <strong>Refresh Taostats</strong>{" "}
+              for a live pull and to append a new snapshot.
+            </p>
+          ) : null}
           <DivergenceTable data={divergence} />
           {config ? (
             <p className="msg footer-hint">
@@ -379,19 +516,24 @@ export default function App() {
           <p className="msg">
             Configure <code>hotkeys.yaml</code> (or <code>BITTENSOR_TOOLS_HOTKEYS</code> in{" "}
             <code>.env</code>). Optional <code>BITTENSOR_NETWORK</code> overrides the YAML{" "}
-            <code>network</code>.
+            <code>network</code> for chain checks only (the file on disk keeps its own{" "}
+            <code>network</code>).
             {hotkeyNetwork ? (
               <>
                 {" "}
-                Current network: <code>{hotkeyNetwork}</code>.
+                Effective network: <code>{hotkeyNetwork}</code>.
               </>
-            ) : null}
+            ) : null}{" "}
+            Add or remove rows below; changes are written to that YAML file.
           </p>
           <h2>Registered hotkeys</h2>
           {hotkeysListError ? (
             <p className="msg warn">Could not load hotkeys list: {hotkeysListError}</p>
           ) : null}
-          <HotkeysTable rows={hotkeyRows} onRefresh={refreshOneHotkey} />
+          {hotkeysActionError ? <p className="msg warn">{hotkeysActionError}</p> : null}
+          <h3 className="subsection-title">Add hotkey</h3>
+          <HotkeysAddForm onSuccess={applyHotkeysConfig} />
+          <HotkeysTable rows={hotkeyRows} onRefresh={refreshOneHotkey} onDelete={deleteHotkeyRow} />
         </div>
       </div>
     </>
@@ -408,7 +550,15 @@ function formatRegCostTau(tau: number | null): string {
   return Math.max(0, tau).toFixed(6);
 }
 
-type OverviewSortKey = "netuid" | "name" | "alpha_price" | "emission" | "reg" | "burn";
+type OverviewSortKey =
+  | "netuid"
+  | "name"
+  | "alpha_price"
+  | "emission"
+  | "alpha_emission"
+  | "reg"
+  | "burn"
+  | "actual_reward";
 
 function compareNullableNum(a: number | null, b: number | null, ascending: boolean): number {
   const dir = ascending ? 1 : -1;
@@ -437,10 +587,22 @@ function sortSubnetRows(rows: SubnetOverviewRow[], key: OverviewSortKey, dir: "a
         return compareNullableNum(a.alpha_price_tao, b.alpha_price_tao, ascending);
       case "emission":
         return compareNullableNum(a.emission_tau_per_day, b.emission_tau_per_day, ascending);
+      case "alpha_emission":
+        return compareNullableNum(
+          a.alpha_emission_tau_per_day ?? null,
+          b.alpha_emission_tau_per_day ?? null,
+          ascending,
+        );
       case "reg":
         return compareNullableNum(a.neuron_registration_cost_tao, b.neuron_registration_cost_tao, ascending);
       case "burn":
         return compareNullableNum(a.incentive_burn_rate, b.incentive_burn_rate, ascending);
+      case "actual_reward":
+        return compareNullableNum(
+          actualRewardTauPerDay(a.alpha_emission_tau_per_day ?? null, a.incentive_burn_rate),
+          actualRewardTauPerDay(b.alpha_emission_tau_per_day ?? null, b.incentive_burn_rate),
+          ascending,
+        );
       default:
         return 0;
     }
@@ -477,11 +639,13 @@ function SubnetOverviewTable({
   error,
   data,
   deltas,
+  highlightNetuids,
 }: {
   loading: boolean;
   error: string | null;
   data: TaostatsOverviewResponse | null;
-  deltas: Record<number, { emission: number | null; burn: number | null; reg: number | null }>;
+  deltas: Record<number, OverviewDeltaRow>;
+  highlightNetuids: Set<number>;
 }) {
   const [sortKey, setSortKey] = useState<OverviewSortKey>("netuid");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -543,8 +707,15 @@ function SubnetOverviewTable({
                 onSort={toggleSort}
               />
               <OverviewSortTh
-                label="Emission/day (τ)"
+                label="Root TAO in (τ/day)"
                 colKey="emission"
+                activeKey={sortKey}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
+              <OverviewSortTh
+                label="Alpha emission (τ/day)"
+                colKey="alpha_emission"
                 activeKey={sortKey}
                 sortDir={sortDir}
                 onSort={toggleSort}
@@ -563,13 +734,21 @@ function SubnetOverviewTable({
                 sortDir={sortDir}
                 onSort={toggleSort}
               />
+              <OverviewSortTh
+                label="Actual reward (τ/day)"
+                colKey="actual_reward"
+                activeKey={sortKey}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
             </tr>
           </thead>
           <tbody>
             {sortedSubnets.map((r) => {
               const d = deltas[r.netuid];
+              const rowHi = highlightNetuids.has(r.netuid);
               return (
-                <tr key={r.netuid}>
+                <tr key={r.netuid} className={rowHi ? "row-high-divergence" : undefined}>
                   <td>
                     <a
                       href={`https://taostats.io/subnets/${r.netuid}`}
@@ -588,6 +767,12 @@ function SubnetOverviewTable({
                     ) : null}
                   </td>
                   <td>
+                    <span>{formatTaoDay(r.alpha_emission_tau_per_day ?? null)}</span>
+                    {d?.alphaEmission != null ? (
+                      <span className="delta-pct"> {formatDeltaPct(d.alphaEmission)}</span>
+                    ) : null}
+                  </td>
+                  <td>
                     <span>{formatRegCostTau(r.neuron_registration_cost_tao)}</span>
                     {d?.reg != null ? (
                       <span className="delta-pct"> {formatDeltaPct(d.reg)}</span>
@@ -597,6 +782,16 @@ function SubnetOverviewTable({
                     <span>{formatBurnPct(r.incentive_burn_rate)}</span>
                     {d?.burn != null ? (
                       <span className="delta-pct"> {formatDeltaPct(d.burn)}</span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span>
+                      {formatTaoDay(
+                        actualRewardTauPerDay(r.alpha_emission_tau_per_day ?? null, r.incentive_burn_rate),
+                      )}
+                    </span>
+                    {d?.actualReward != null ? (
+                      <span className="delta-pct"> {formatDeltaPct(d.actualReward)}</span>
                     ) : null}
                   </td>
                 </tr>
@@ -613,8 +808,8 @@ function DivergenceTable({ data }: { data: TaostatsDivergenceResponse | null }) 
   if (!data) {
     return (
       <p className="msg">
-        Press <strong>Refresh Taostats</strong> to load this table and append a snapshot for the ~24h
-        baseline.
+        Could not load snapshot-based divergence yet. After you save at least one snapshot (Refresh
+        Taostats), reopen the page or check the API server.
       </p>
     );
   }
@@ -641,7 +836,12 @@ function DivergenceTable({ data }: { data: TaostatsDivergenceResponse | null }) 
       </thead>
       <tbody>
         {rows.map((x) => (
-          <tr key={x.netuid}>
+          <tr
+            key={x.netuid}
+            className={
+              x.divergence_pct_points > HIGH_DIVERGENCE_HIGHLIGHT_PP ? "row-high-divergence" : undefined
+            }
+          >
             <td>
               <a
                 href={`https://taostats.io/subnets/${x.netuid}`}
@@ -672,12 +872,14 @@ function DivergenceTable({ data }: { data: TaostatsDivergenceResponse | null }) 
 function HotkeysTable({
   rows,
   onRefresh,
+  onDelete,
 }: {
   rows: HotkeyUiRow[];
   onRefresh: (netuid: number, ss58: string) => void;
+  onDelete: (netuid: number, ss58: string) => void;
 }) {
   if (!rows.length) {
-    return <p className="msg">No hotkeys in config (empty <code>hotkeys.yaml</code>).</p>;
+    return <p className="msg">No hotkeys in config yet. Add one above or edit the YAML file.</p>;
   }
   return (
     <table>
@@ -711,18 +913,110 @@ function HotkeysTable({
               <code className="hk">{r.hotkey || "—"}</code>
             </td>
             <td className="actions">
-              <button
-                type="button"
-                className="btn-sm"
-                disabled={r.refreshing || !r.hotkey}
-                onClick={() => onRefresh(r.netuid, r.hotkey)}
-              >
-                {r.refreshing ? "…" : "Refresh"}
-              </button>
+              <span className="action-btns">
+                <button
+                  type="button"
+                  className="btn-sm"
+                  disabled={r.refreshing || !r.hotkey}
+                  onClick={() => onRefresh(r.netuid, r.hotkey)}
+                >
+                  {r.refreshing ? "…" : "Refresh"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-sm btn-muted"
+                  disabled={!r.hotkey}
+                  onClick={() => onDelete(r.netuid, r.hotkey)}
+                >
+                  Remove
+                </button>
+              </span>
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+function HotkeysAddForm({ onSuccess }: { onSuccess: (h: HotkeysConfigResponse) => void }) {
+  const [name, setName] = useState("");
+  const [netuid, setNetuid] = useState("");
+  const [ss58, setSs58] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const nu = Number(netuid);
+    if (!Number.isInteger(nu) || nu < 0) {
+      setError("netuid must be a non-negative integer.");
+      return;
+    }
+    const key = ss58.trim();
+    if (!key) {
+      setError("Hotkey (SS58) is required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const h = await fetchJson<HotkeysConfigResponse>("/api/hotkeys/entry", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), netuid: nu, ss58: key }),
+      });
+      onSuccess(h);
+      setName("");
+      setNetuid("");
+      setSs58("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="hotkey-add-form" onSubmit={handleSubmit}>
+      {error ? <p className="msg warn hotkey-form-error">{error}</p> : null}
+      <div className="hotkey-add-fields">
+        <label>
+          Name <span className="sub">(optional)</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(ev) => setName(ev.target.value)}
+            placeholder="Label in the table"
+            autoComplete="off"
+          />
+        </label>
+        <label>
+          netuid
+          <input
+            type="text"
+            inputMode="numeric"
+            value={netuid}
+            onChange={(ev) => setNetuid(ev.target.value)}
+            placeholder="e.g. 1"
+            autoComplete="off"
+          />
+        </label>
+        <label className="hotkey-ss58-field">
+          Hotkey (SS58)
+          <input
+            type="text"
+            className="hotkey-ss58-input"
+            value={ss58}
+            onChange={(ev) => setSs58(ev.target.value)}
+            placeholder="5…"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </label>
+        <button type="submit" disabled={submitting}>
+          {submitting ? "Saving…" : "Add to config"}
+        </button>
+      </div>
+    </form>
   );
 }

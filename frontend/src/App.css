@@ -104,6 +104,11 @@ button.tab-btn.active {
   margin-bottom: 0;
 }
 
+p.msg.snapshot-taken {
+  margin-top: 0.15rem;
+  margin-bottom: 0.85rem;
+}
+
 section {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -145,6 +150,71 @@ button.btn-sm {
   font-size: 0.8rem;
 }
 
+button.btn-muted {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+button.btn-muted:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  filter: none;
+}
+
+.action-btns {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.hotkey-add-form {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.hotkey-form-error {
+  margin: 0 0 0.65rem 0;
+}
+
+.hotkey-add-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  align-items: flex-end;
+}
+
+.hotkey-add-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.hotkey-add-fields input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.88rem;
+  min-width: 7rem;
+}
+
+.hotkey-add-fields .hotkey-ss58-field {
+  flex: 1 1 12rem;
+}
+
+.hotkey-add-fields .hotkey-ss58-input {
+  min-width: 14rem;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.82rem;
+}
+
 td.actions {
   white-space: nowrap;
   width: 1%;
@@ -170,6 +240,19 @@ th {
 
 tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+/* |Δ emission% − Δ burn%| strictly above 2 pp */
+tr.row-high-divergence td {
+  background: rgba(245, 108, 108, 0.12);
+}
+
+tr.row-high-divergence:hover td {
+  background: rgba(245, 108, 108, 0.18);
+}
+
+tr.row-high-divergence td:first-child {
+  box-shadow: inset 3px 0 0 var(--bad);
 }
 
 .badge {
