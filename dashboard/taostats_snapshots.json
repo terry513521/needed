@@ -3364,5 +3364,1688 @@
 }
 },
 "blocks_per_day": 7200
+},
+{
+"t": 1776070983,
+"subnets": {
+"0": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 0,
+"name": "Root (\u03a4)",
+"alpha_price_tao": 1.0,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 7200.0,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"1": {
+"e": 0,
+"b": 605718,
+"overview": {
+"netuid": 1,
+"name": "Apex (\u03b1)",
+"alpha_price_tao": 0.011068599,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 79.6939128,
+"neuron_registration_cost_tao": 0.000605718,
+"incentive_burn_rate": 0.8849164568551156
+}
+},
+"2": {
+"e": 4329357,
+"b": 25515698,
+"overview": {
+"netuid": 2,
+"name": "DSperse (\u03b2)",
+"alpha_price_tao": 0.008664247,
+"emission_tau_per_day": 31.1713704,
+"alpha_emission_tau_per_day": 62.3825784,
+"neuron_registration_cost_tao": 0.025515698,
+"incentive_burn_rate": 1.0
+}
+},
+"3": {
+"e": 0,
+"b": 2677835,
+"overview": {
+"netuid": 3,
+"name": "deprecated (\u03b3)",
+"alpha_price_tao": 0.030265928,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 217.9146816,
+"neuron_registration_cost_tao": 0.002677835,
+"incentive_burn_rate": 1.0
+}
+},
+"4": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 4,
+"name": "Targon (\u03b4)",
+"alpha_price_tao": 0.052601394,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 378.7300368,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.5523765926604105
+}
+},
+"5": {
+"e": 8777504,
+"b": 500000,
+"overview": {
+"netuid": 5,
+"name": "Hone (\u03b5)",
+"alpha_price_tao": 0.017555288,
+"emission_tau_per_day": 63.1980288,
+"alpha_emission_tau_per_day": 126.39807359999999,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"6": {
+"e": 0,
+"b": 200000000,
+"overview": {
+"netuid": 6,
+"name": "Numinous (\u03b6)",
+"alpha_price_tao": 0.005236168,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 37.7004096,
+"neuron_registration_cost_tao": 0.2,
+"incentive_burn_rate": 0.0
+}
+},
+"7": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 7,
+"name": "Allways (\u03b7)",
+"alpha_price_tao": 0.0039573,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 28.492560000000005,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"8": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 8,
+"name": "Vanta (\u03b8)",
+"alpha_price_tao": 0.032632523,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 234.95416559999998,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9837033646143282
+}
+},
+"9": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 9,
+"name": "iota (\u03b9)",
+"alpha_price_tao": 0.022855894,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 164.5624368,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.8206912336919203
+}
+},
+"10": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 10,
+"name": "Swap (\u03ba)",
+"alpha_price_tao": 0.006130932,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 44.142710400000006,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"11": {
+"e": 0,
+"b": 206000518,
+"overview": {
+"netuid": 11,
+"name": "TrajectoryRL (\u03bb)",
+"alpha_price_tao": 0.012233417,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 88.0806024,
+"neuron_registration_cost_tao": 0.206000518,
+"incentive_burn_rate": 0.5121232928969253
+}
+},
+"12": {
+"e": 401639,
+"b": 500000,
+"overview": {
+"netuid": 12,
+"name": "Compute Horde (\u03bc)",
+"alpha_price_tao": 0.006686534,
+"emission_tau_per_day": 2.8918008,
+"alpha_emission_tau_per_day": 48.1430448,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9939879453727016
+}
+},
+"13": {
+"e": 0,
+"b": 9048449,
+"overview": {
+"netuid": 13,
+"name": "Data Universe (\u03bd)",
+"alpha_price_tao": 0.00832429,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 59.934888,
+"neuron_registration_cost_tao": 0.009048449,
+"incentive_burn_rate": 0.7088883802548257
+}
+},
+"14": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 14,
+"name": "TAOHash (\u30c6)",
+"alpha_price_tao": 0.008977163,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 64.6355736,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9997711146715496
+}
+},
+"15": {
+"e": 6800507,
+"b": 850000,
+"overview": {
+"netuid": 15,
+"name": "ORO (\u03bf)",
+"alpha_price_tao": 0.013659131,
+"emission_tau_per_day": 48.9636504,
+"alpha_emission_tau_per_day": 98.3457432,
+"neuron_registration_cost_tao": 0.00085,
+"incentive_burn_rate": 0.7708094911116198
+}
+},
+"16": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 16,
+"name": "BitAds (\u03c0)",
+"alpha_price_tao": 0.004768711,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 34.3347192,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"17": {
+"e": 7583118,
+"b": 500000,
+"overview": {
+"netuid": 17,
+"name": "404\u2014GEN (\u03c1)",
+"alpha_price_tao": 0.01516657,
+"emission_tau_per_day": 54.5984496,
+"alpha_emission_tau_per_day": 109.19930400000001,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.7999847409781033
+}
+},
+"18": {
+"e": 0,
+"b": 999999999,
+"overview": {
+"netuid": 18,
+"name": "Zeus (\u03c3)",
+"alpha_price_tao": 0.007017129,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 50.5233288,
+"neuron_registration_cost_tao": 0.999999999,
+"incentive_burn_rate": 0.736873426413367
+}
+},
+"19": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 19,
+"name": "blockmachine (t)",
+"alpha_price_tao": 0.014491092,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 104.33586240000001,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"20": {
+"e": 2055217,
+"b": 500000,
+"overview": {
+"netuid": 20,
+"name": "GroundLayer (\u03c5)",
+"alpha_price_tao": 0.004250793,
+"emission_tau_per_day": 14.7975624,
+"alpha_emission_tau_per_day": 30.6057096,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"21": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 21,
+"name": "AdTAO (\u03c6)",
+"alpha_price_tao": 0.004887499,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 35.1899928,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"22": {
+"e": 2677429,
+"b": 4369152,
+"overview": {
+"netuid": 22,
+"name": "Desearch (\u03c7)",
+"alpha_price_tao": 0.005360772,
+"emission_tau_per_day": 19.2774888,
+"alpha_emission_tau_per_day": 38.5975584,
+"neuron_registration_cost_tao": 0.004369152,
+"incentive_burn_rate": 0.8117189288166629
+}
+},
+"23": {
+"e": 0,
+"b": 100000000,
+"overview": {
+"netuid": 23,
+"name": "Trishool (\u03c8)",
+"alpha_price_tao": 0.004237898,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 30.5128656,
+"neuron_registration_cost_tao": 0.1,
+"incentive_burn_rate": 1.0
+}
+},
+"24": {
+"e": 7377682,
+"b": 500000,
+"overview": {
+"netuid": 24,
+"name": "Quasar (\u03c9)",
+"alpha_price_tao": 0.014755859,
+"emission_tau_per_day": 53.1193104,
+"alpha_emission_tau_per_day": 106.2421848,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"25": {
+"e": 272894,
+"b": 500000,
+"overview": {
+"netuid": 25,
+"name": "Mainframe (\u05d0)",
+"alpha_price_tao": 0.004931014,
+"emission_tau_per_day": 1.9648368,
+"alpha_emission_tau_per_day": 35.5033008,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"26": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 26,
+"name": "Kinitro (\u0d9e)",
+"alpha_price_tao": 0.003808061,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 27.418039200000003,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"27": {
+"e": 2174876,
+"b": 500000,
+"overview": {
+"netuid": 27,
+"name": "Nodexo (\u05d2)",
+"alpha_price_tao": 0.004339792,
+"emission_tau_per_day": 15.6591072,
+"alpha_emission_tau_per_day": 31.2465024,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"28": {
+"e": 5113432,
+"b": 500000,
+"overview": {
+"netuid": 28,
+"name": "Unknown (\u05d3)",
+"alpha_price_tao": 0.010229666,
+"emission_tau_per_day": 36.8167104,
+"alpha_emission_tau_per_day": 73.6535952,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"29": {
+"e": 2492953,
+"b": 500000,
+"overview": {
+"netuid": 29,
+"name": "Coldint (\u05d4)",
+"alpha_price_tao": 0.01393691,
+"emission_tau_per_day": 17.9492616,
+"alpha_emission_tau_per_day": 100.345752,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"30": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 30,
+"name": "Pending (\u05d5)",
+"alpha_price_tao": 0.004136167,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 29.780402399999996,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"31": {
+"e": 2091224,
+"b": 500000,
+"overview": {
+"netuid": 31,
+"name": "Halftime (\u05d6)",
+"alpha_price_tao": 0.004182501,
+"emission_tau_per_day": 15.0568128,
+"alpha_emission_tau_per_day": 30.1140072,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"32": {
+"e": 1758195,
+"b": 500000,
+"overview": {
+"netuid": 32,
+"name": "ItsAI (\u05d7)",
+"alpha_price_tao": 0.004042777,
+"emission_tau_per_day": 12.659004,
+"alpha_emission_tau_per_day": 29.1079944,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"33": {
+"e": 0,
+"b": 27711871,
+"overview": {
+"netuid": 33,
+"name": "ReadyAI (\u05d8)",
+"alpha_price_tao": 0.009079219,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 65.3703768,
+"neuron_registration_cost_tao": 0.027711871,
+"incentive_burn_rate": 0.9058518348973831
+}
+},
+"34": {
+"e": 0,
+"b": 187008670,
+"overview": {
+"netuid": 34,
+"name": "BitMind (\u05d9)",
+"alpha_price_tao": 0.014321217,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 103.11276240000001,
+"neuron_registration_cost_tao": 0.18700867,
+"incentive_burn_rate": 0.40483710994125277
+}
+},
+"35": {
+"e": 0,
+"b": 100000000,
+"overview": {
+"netuid": 35,
+"name": "Cartha (\u05da)",
+"alpha_price_tao": 0.004937963,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 35.5533336,
+"neuron_registration_cost_tao": 0.1,
+"incentive_burn_rate": 0.0
+}
+},
+"36": {
+"e": 1526551,
+"b": 8372703,
+"overview": {
+"netuid": 36,
+"name": "Unknown (\u05db)",
+"alpha_price_tao": 0.008395084,
+"emission_tau_per_day": 10.9911672,
+"alpha_emission_tau_per_day": 60.44460480000001,
+"neuron_registration_cost_tao": 0.008372703,
+"incentive_burn_rate": 1.0
+}
+},
+"37": {
+"e": 162245,
+"b": 500000,
+"overview": {
+"netuid": 37,
+"name": "Aurelius (\u05dc)",
+"alpha_price_tao": 0.004210806,
+"emission_tau_per_day": 1.168164,
+"alpha_emission_tau_per_day": 30.3178032,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"38": {
+"e": 4686147,
+"b": 500000,
+"overview": {
+"netuid": 38,
+"name": "colosseum (\u05dd)",
+"alpha_price_tao": 0.009372408,
+"emission_tau_per_day": 33.7402584,
+"alpha_emission_tau_per_day": 67.4813376,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"39": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 39,
+"name": "deprecated (\u05de)",
+"alpha_price_tao": 0.007226087,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 52.0278264,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"40": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 40,
+"name": "Chunking (\u05df)",
+"alpha_price_tao": 0.003418351,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 24.6121272,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"41": {
+"e": 0,
+"b": 100000000,
+"overview": {
+"netuid": 41,
+"name": "Almanac (\u05e0)",
+"alpha_price_tao": 0.005474479,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 39.4162488,
+"neuron_registration_cost_tao": 0.1,
+"incentive_burn_rate": 0.0
+}
+},
+"42": {
+"e": 0,
+"b": 610372,
+"overview": {
+"netuid": 42,
+"name": "Unknown (\u05e1)",
+"alpha_price_tao": 0.003444073,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 24.7973256,
+"neuron_registration_cost_tao": 0.000610372,
+"incentive_burn_rate": 1.0
+}
+},
+"43": {
+"e": 400744,
+"b": 500000000,
+"overview": {
+"netuid": 43,
+"name": "Graphite (\u05e2)",
+"alpha_price_tao": 0.00613854,
+"emission_tau_per_day": 2.8853568,
+"alpha_emission_tau_per_day": 44.197488,
+"neuron_registration_cost_tao": 0.5,
+"incentive_burn_rate": 1.0
+}
+},
+"44": {
+"e": 12011076,
+"b": 500000,
+"overview": {
+"netuid": 44,
+"name": "Score (\u05e3)",
+"alpha_price_tao": 0.031166431,
+"emission_tau_per_day": 86.4797472,
+"alpha_emission_tau_per_day": 224.39830320000002,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.7636377508201724
+}
+},
+"45": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 45,
+"name": "Talisman AI (\u05e4)",
+"alpha_price_tao": 0.004149248,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 29.874585600000003,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9979247730220493
+}
+},
+"46": {
+"e": 3572879,
+"b": 100000000,
+"overview": {
+"netuid": 46,
+"name": "RESI (\u05e5)",
+"alpha_price_tao": 0.007128753,
+"emission_tau_per_day": 25.7247288,
+"alpha_emission_tau_per_day": 51.3270216,
+"neuron_registration_cost_tao": 0.1,
+"incentive_burn_rate": 1.0
+}
+},
+"47": {
+"e": 2034522,
+"b": 50000000,
+"overview": {
+"netuid": 47,
+"name": "EvolAI (\u05e6)",
+"alpha_price_tao": 0.004069126,
+"emission_tau_per_day": 14.6485584,
+"alpha_emission_tau_per_day": 29.2977072,
+"neuron_registration_cost_tao": 0.05,
+"incentive_burn_rate": 1.0
+}
+},
+"48": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 48,
+"name": "Quantum Compute (\u05e7)",
+"alpha_price_tao": 0.005154797,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 37.1145384,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"49": {
+"e": 1816218,
+"b": 500000,
+"overview": {
+"netuid": 49,
+"name": "Nepher Robotics (\u05e8)",
+"alpha_price_tao": 0.005618649,
+"emission_tau_per_day": 13.0767696,
+"alpha_emission_tau_per_day": 40.4542728,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9943541618982223
+}
+},
+"50": {
+"e": 5068134,
+"b": 800000000,
+"overview": {
+"netuid": 50,
+"name": "Synth (\u05e9)",
+"alpha_price_tao": 0.011123694,
+"emission_tau_per_day": 36.4905648,
+"alpha_emission_tau_per_day": 80.0905968,
+"neuron_registration_cost_tao": 0.8,
+"incentive_burn_rate": 0.5327229724574655
+}
+},
+"51": {
+"e": 24720024,
+"b": 5000000,
+"overview": {
+"netuid": 51,
+"name": "lium.io (\u05ea)",
+"alpha_price_tao": 0.049505575,
+"emission_tau_per_day": 177.9841728,
+"alpha_emission_tau_per_day": 356.44014000000004,
+"neuron_registration_cost_tao": 0.005,
+"incentive_burn_rate": 0.8877698939497978
+}
+},
+"52": {
+"e": 0,
+"b": 999999999,
+"overview": {
+"netuid": 52,
+"name": "Dojo (\u0627)",
+"alpha_price_tao": 0.007167598,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 51.6067056,
+"neuron_registration_cost_tao": 0.999999999,
+"incentive_burn_rate": 1.0
+}
+},
+"53": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 53,
+"name": "EfficientFrontier (\u0628)",
+"alpha_price_tao": 0.005023325,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 36.16794,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"54": {
+"e": 3858512,
+"b": 500000,
+"overview": {
+"netuid": 54,
+"name": "Yanez MIID (\u062a)",
+"alpha_price_tao": 0.007717246,
+"emission_tau_per_day": 27.7812864,
+"alpha_emission_tau_per_day": 55.5641712,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.6642557412069886
+}
+},
+"55": {
+"e": 0,
+"b": 1254004,
+"overview": {
+"netuid": 55,
+"name": "NIOME (\u062b)",
+"alpha_price_tao": 0.003197561,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 23.022439199999997,
+"neuron_registration_cost_tao": 0.001254004,
+"incentive_burn_rate": 1.0
+}
+},
+"56": {
+"e": 12914077,
+"b": 500000,
+"overview": {
+"netuid": 56,
+"name": "Gradients (\u062c)",
+"alpha_price_tao": 0.025828326,
+"emission_tau_per_day": 92.9813544,
+"alpha_emission_tau_per_day": 185.96394719999998,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.6746623941405356
+}
+},
+"57": {
+"e": 0,
+"b": 25000000,
+"overview": {
+"netuid": 57,
+"name": "Sparket.AI (\u062d)",
+"alpha_price_tao": 0.003162931,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 22.773103199999998,
+"neuron_registration_cost_tao": 0.025,
+"incentive_burn_rate": 0.9260090028229191
+}
+},
+"58": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 58,
+"name": "Handshake (\u062e)",
+"alpha_price_tao": 0.005268833,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 37.935597599999994,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"59": {
+"e": 0,
+"b": 10745897,
+"overview": {
+"netuid": 59,
+"name": "Babelbit (\u062f)",
+"alpha_price_tao": 0.004004344,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 28.8312768,
+"neuron_registration_cost_tao": 0.010745897,
+"incentive_burn_rate": 0.0
+}
+},
+"60": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 60,
+"name": "Bitsec.ai (\u0630)",
+"alpha_price_tao": 0.005006128,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 36.044121600000004,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"61": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 61,
+"name": "RedTeam (\u0631)",
+"alpha_price_tao": 0.004430282,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 31.8980304,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.500175478751812
+}
+},
+"62": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 62,
+"name": "Ridges (\u0632)",
+"alpha_price_tao": 0.029143652,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 209.8342944,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"63": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 63,
+"name": "Enigma (\u0633)",
+"alpha_price_tao": 0.008374496,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 60.2963712,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"64": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 64,
+"name": "Chutes (\u0634)",
+"alpha_price_tao": 0.088230145,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 635.257044,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"65": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 65,
+"name": "TAO Private Network (\u0635)",
+"alpha_price_tao": 0.004255693,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 30.640989599999997,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.8086823834592203
+}
+},
+"66": {
+"e": 8314768,
+"b": 615093744,
+"overview": {
+"netuid": 66,
+"name": "ninja (\u0636)",
+"alpha_price_tao": 0.016625373,
+"emission_tau_per_day": 59.8663296,
+"alpha_emission_tau_per_day": 119.7026856,
+"neuron_registration_cost_tao": 0.615093744,
+"incentive_burn_rate": 0.0
+}
+},
+"67": {
+"e": 3673779,
+"b": 6021405,
+"overview": {
+"netuid": 67,
+"name": "Harnyx (\u0637)",
+"alpha_price_tao": 0.008853214,
+"emission_tau_per_day": 26.4512088,
+"alpha_emission_tau_per_day": 63.7431408,
+"neuron_registration_cost_tao": 0.006021405,
+"incentive_burn_rate": 0.9899900816357672
+}
+},
+"68": {
+"e": 3290416,
+"b": 325355466,
+"overview": {
+"netuid": 68,
+"name": "NOVA (\u0638)",
+"alpha_price_tao": 0.017638055,
+"emission_tau_per_day": 23.6909952,
+"alpha_emission_tau_per_day": 126.993996,
+"neuron_registration_cost_tao": 0.325355466,
+"incentive_burn_rate": 0.6504060629226904
+}
+},
+"69": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 69,
+"name": "Unknown (\u0639)",
+"alpha_price_tao": 0.003422774,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 24.6439728,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"70": {
+"e": 3818613,
+"b": 50000000,
+"overview": {
+"netuid": 70,
+"name": "NexisGen (\u063a)",
+"alpha_price_tao": 0.00763701,
+"emission_tau_per_day": 27.4940136,
+"alpha_emission_tau_per_day": 54.986472,
+"neuron_registration_cost_tao": 0.05,
+"incentive_burn_rate": 0.0
+}
+},
+"71": {
+"e": 1186192,
+"b": 16254169,
+"overview": {
+"netuid": 71,
+"name": "Leadpoet (\u3134)",
+"alpha_price_tao": 0.007715442,
+"emission_tau_per_day": 8.5405824,
+"alpha_emission_tau_per_day": 55.5511824,
+"neuron_registration_cost_tao": 0.016254169,
+"incentive_burn_rate": 0.6079041733424887
+}
+},
+"72": {
+"e": 0,
+"b": 186693907,
+"overview": {
+"netuid": 72,
+"name": "StreetVision by NATIX (\u0642)",
+"alpha_price_tao": 0.003361251,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 24.2010072,
+"neuron_registration_cost_tao": 0.186693907,
+"incentive_burn_rate": 0.0
+}
+},
+"73": {
+"e": 2446493,
+"b": 500000,
+"overview": {
+"netuid": 73,
+"name": "MetaHash (\u0643)",
+"alpha_price_tao": 0.004893034,
+"emission_tau_per_day": 17.6147496,
+"alpha_emission_tau_per_day": 35.2298448,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"74": {
+"e": 3704231,
+"b": 500000,
+"overview": {
+"netuid": 74,
+"name": "Gittensor (\u0644)",
+"alpha_price_tao": 0.00741741,
+"emission_tau_per_day": 26.6704632,
+"alpha_emission_tau_per_day": 53.405352,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.5587396047913329
+}
+},
+"75": {
+"e": 0,
+"b": 1519845,
+"overview": {
+"netuid": 75,
+"name": "Hippius (\u0645)",
+"alpha_price_tao": 0.02372518,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 170.821296,
+"neuron_registration_cost_tao": 0.001519845,
+"incentive_burn_rate": 0.9928740367742428
+}
+},
+"76": {
+"e": 3014801,
+"b": 500000000,
+"overview": {
+"netuid": 76,
+"name": "Byzantium (\u0646)",
+"alpha_price_tao": 0.00602987,
+"emission_tau_per_day": 21.7065672,
+"alpha_emission_tau_per_day": 43.415064,
+"neuron_registration_cost_tao": 0.5,
+"incentive_burn_rate": 1.0
+}
+},
+"77": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 77,
+"name": "Liquidity (\u0647)",
+"alpha_price_tao": 0.004311935,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 31.045932,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"78": {
+"e": 0,
+"b": 250000000,
+"overview": {
+"netuid": 78,
+"name": "Loosh (\u0648)",
+"alpha_price_tao": 0.002248043,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 16.1859096,
+"neuron_registration_cost_tao": 0.25,
+"incentive_burn_rate": 0.9084153505760281
+}
+},
+"79": {
+"e": 2193123,
+"b": 2000035,
+"overview": {
+"netuid": 79,
+"name": "MVTRX (\u064a)",
+"alpha_price_tao": 0.004378047,
+"emission_tau_per_day": 15.7904856,
+"alpha_emission_tau_per_day": 31.521938400000003,
+"neuron_registration_cost_tao": 0.002000035,
+"incentive_burn_rate": 0.7966735332265201
+}
+},
+"80": {
+"e": 2027462,
+"b": 500000,
+"overview": {
+"netuid": 80,
+"name": "dogelayer (\u0649)",
+"alpha_price_tao": 0.004054934,
+"emission_tau_per_day": 14.5977264,
+"alpha_emission_tau_per_day": 29.195524799999998,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"81": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 81,
+"name": "deprecated (\u16a0)",
+"alpha_price_tao": 0.00961507,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 69.228504,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"82": {
+"e": 0,
+"b": 151524122,
+"overview": {
+"netuid": 82,
+"name": "Hermes (\u16a2)",
+"alpha_price_tao": 0.003205999,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 23.083192800000003,
+"neuron_registration_cost_tao": 0.151524122,
+"incentive_burn_rate": 0.3283588921950103
+}
+},
+"83": {
+"e": 2215013,
+"b": 5633564,
+"overview": {
+"netuid": 83,
+"name": "CliqueAI (\u16a6)",
+"alpha_price_tao": 0.004430089,
+"emission_tau_per_day": 15.9480936,
+"alpha_emission_tau_per_day": 31.8966408,
+"neuron_registration_cost_tao": 0.005633564,
+"incentive_burn_rate": 0.9385061417563134
+}
+},
+"84": {
+"e": 0,
+"b": 100000000,
+"overview": {
+"netuid": 84,
+"name": "ChipForge (Tatsu) (\u30e2)",
+"alpha_price_tao": 0.003195788,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 23.009673600000003,
+"neuron_registration_cost_tao": 0.1,
+"incentive_burn_rate": 1.0
+}
+},
+"85": {
+"e": 6405705,
+"b": 500000,
+"overview": {
+"netuid": 85,
+"name": "Vidaio (\u16b1)",
+"alpha_price_tao": 0.012811389,
+"emission_tau_per_day": 46.121076,
+"alpha_emission_tau_per_day": 92.2420008,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.805783169298848
+}
+},
+"86": {
+"e": 1933812,
+"b": 500000,
+"overview": {
+"netuid": 86,
+"name": "\u2692 (\u16b3)",
+"alpha_price_tao": 0.004089926,
+"emission_tau_per_day": 13.9234464,
+"alpha_emission_tau_per_day": 29.4474672,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"87": {
+"e": 1967835,
+"b": 1000000,
+"overview": {
+"netuid": 87,
+"name": "Luminar Network (\u042b)",
+"alpha_price_tao": 0.003946231,
+"emission_tau_per_day": 14.168412,
+"alpha_emission_tau_per_day": 28.412863199999997,
+"neuron_registration_cost_tao": 0.001,
+"incentive_burn_rate": 1.0
+}
+},
+"88": {
+"e": 0,
+"b": 178888438,
+"overview": {
+"netuid": 88,
+"name": "Investing (\u16c9)",
+"alpha_price_tao": 0.004063205,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 29.255076000000003,
+"neuron_registration_cost_tao": 0.178888438,
+"incentive_burn_rate": 0.0
+}
+},
+"89": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 89,
+"name": "InfiniteHash (\u16d2)",
+"alpha_price_tao": 0.003683157,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 26.5187304,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9853208209353781
+}
+},
+"90": {
+"e": 2423057,
+"b": 500000,
+"overview": {
+"netuid": 90,
+"name": "Unknown (\u1680)",
+"alpha_price_tao": 0.004846164,
+"emission_tau_per_day": 17.4460104,
+"alpha_emission_tau_per_day": 34.8923808,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"91": {
+"e": 5676574,
+"b": 500000,
+"overview": {
+"netuid": 91,
+"name": "Bitstarter #1 (\u1681)",
+"alpha_price_tao": 0.011353033,
+"emission_tau_per_day": 40.8713328,
+"alpha_emission_tau_per_day": 81.7418376,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"92": {
+"e": 2043180,
+"b": 50000000,
+"overview": {
+"netuid": 92,
+"name": "TensorClaw (\u1682)",
+"alpha_price_tao": 0.004086369,
+"emission_tau_per_day": 14.710896,
+"alpha_emission_tau_per_day": 29.4218568,
+"neuron_registration_cost_tao": 0.05,
+"incentive_burn_rate": 1.0
+}
+},
+"93": {
+"e": 9663920,
+"b": 5000000,
+"overview": {
+"netuid": 93,
+"name": "Bitcast (\u1683)",
+"alpha_price_tao": 0.019328289,
+"emission_tau_per_day": 69.580224,
+"alpha_emission_tau_per_day": 139.16368079999998,
+"neuron_registration_cost_tao": 0.005,
+"incentive_burn_rate": 0.8873609521629664
+}
+},
+"94": {
+"e": 1615960,
+"b": 500000,
+"overview": {
+"netuid": 94,
+"name": "Bitsota (\u1684)",
+"alpha_price_tao": 0.003816588,
+"emission_tau_per_day": 11.634912,
+"alpha_emission_tau_per_day": 27.4794336,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.8999923704890517
+}
+},
+"95": {
+"e": 10756822,
+"b": 500000,
+"overview": {
+"netuid": 95,
+"name": "Unknown (\u1685)",
+"alpha_price_tao": 0.021514208,
+"emission_tau_per_day": 77.4491184,
+"alpha_emission_tau_per_day": 154.9022976,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"96": {
+"e": 0,
+"b": 520744,
+"overview": {
+"netuid": 96,
+"name": "Verathos (\u169b)",
+"alpha_price_tao": 2.872354896,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 20680.9552512,
+"neuron_registration_cost_tao": 0.000520744,
+"incentive_burn_rate": 1.0
+}
+},
+"97": {
+"e": 21745662,
+"b": 358505283,
+"overview": {
+"netuid": 97,
+"name": "distil (\u10d0)",
+"alpha_price_tao": 0.080239081,
+"emission_tau_per_day": 156.5687664,
+"alpha_emission_tau_per_day": 577.7213832,
+"neuron_registration_cost_tao": 0.358505283,
+"incentive_burn_rate": 0.0
+}
+},
+"98": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 98,
+"name": "ForeverMoney (\u10d1)",
+"alpha_price_tao": 0.004018811,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 28.935439199999998,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"99": {
+"e": 2327672,
+"b": 50000000,
+"overview": {
+"netuid": 99,
+"name": "Leoma (\u10d2)",
+"alpha_price_tao": 0.004655505,
+"emission_tau_per_day": 16.7592384,
+"alpha_emission_tau_per_day": 33.519636,
+"neuron_registration_cost_tao": 0.05,
+"incentive_burn_rate": 0.0
+}
+},
+"100": {
+"e": 3666890,
+"b": 23723087,
+"overview": {
+"netuid": 100,
+"name": "Pla\u03c4form (\u10d3)",
+"alpha_price_tao": 0.010757724,
+"emission_tau_per_day": 26.401608,
+"alpha_emission_tau_per_day": 77.4556128,
+"neuron_registration_cost_tao": 0.023723087,
+"incentive_burn_rate": 1.0
+}
+},
+"101": {
+"e": 1274131,
+"b": 505574,
+"overview": {
+"netuid": 101,
+"name": "Unknown (\u10d4)",
+"alpha_price_tao": 0.003860327,
+"emission_tau_per_day": 9.1737432,
+"alpha_emission_tau_per_day": 27.794354400000003,
+"neuron_registration_cost_tao": 0.000505574,
+"incentive_burn_rate": 1.0
+}
+},
+"102": {
+"e": 2416672,
+"b": 3474131,
+"overview": {
+"netuid": 102,
+"name": "ConnitoAI (\u10d5)",
+"alpha_price_tao": 0.013593699,
+"emission_tau_per_day": 17.4000384,
+"alpha_emission_tau_per_day": 97.8746328,
+"neuron_registration_cost_tao": 0.003474131,
+"incentive_burn_rate": 1.0
+}
+},
+"103": {
+"e": 0,
+"b": 73491072,
+"overview": {
+"netuid": 103,
+"name": "Djinn (\u0531)",
+"alpha_price_tao": 0.005400766,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 38.8855152,
+"neuron_registration_cost_tao": 0.073491072,
+"incentive_burn_rate": 0.8216372930495155
+}
+},
+"104": {
+"e": 2334842,
+"b": 999999999,
+"overview": {
+"netuid": 104,
+"name": "for sale (burn to uid1) (\u0532)",
+"alpha_price_tao": 0.00466973,
+"emission_tau_per_day": 16.8108624,
+"alpha_emission_tau_per_day": 33.622056,
+"neuron_registration_cost_tao": 0.999999999,
+"incentive_burn_rate": 0.0
+}
+},
+"105": {
+"e": 4603556,
+"b": 247493065,
+"overview": {
+"netuid": 105,
+"name": "Beam (\u0533)",
+"alpha_price_tao": 0.009163511,
+"emission_tau_per_day": 33.1456032,
+"alpha_emission_tau_per_day": 65.9772792,
+"neuron_registration_cost_tao": 0.247493065,
+"incentive_burn_rate": 0.0
+}
+},
+"106": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 106,
+"name": "VoidAI (\u0534)",
+"alpha_price_tao": 0.004143864,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 29.835820799999997,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"107": {
+"e": 6054549,
+"b": 100000000,
+"overview": {
+"netuid": 107,
+"name": "Minos (\u30df)",
+"alpha_price_tao": 0.012092739,
+"emission_tau_per_day": 43.5927528,
+"alpha_emission_tau_per_day": 87.0677208,
+"neuron_registration_cost_tao": 0.1,
+"incentive_burn_rate": 1.0
+}
+},
+"108": {
+"e": 2025020,
+"b": 10000000,
+"overview": {
+"netuid": 108,
+"name": "TalkHead (\u0536)",
+"alpha_price_tao": 0.004050038,
+"emission_tau_per_day": 14.580144,
+"alpha_emission_tau_per_day": 29.160273599999996,
+"neuron_registration_cost_tao": 0.01,
+"incentive_burn_rate": 1.0
+}
+},
+"109": {
+"e": 1922654,
+"b": 528675,
+"overview": {
+"netuid": 109,
+"name": "Academia (\u055e)",
+"alpha_price_tao": 0.003845366,
+"emission_tau_per_day": 13.8431088,
+"alpha_emission_tau_per_day": 27.686635199999998,
+"neuron_registration_cost_tao": 0.000528675,
+"incentive_burn_rate": 1.0
+}
+},
+"110": {
+"e": 2102153,
+"b": 500000,
+"overview": {
+"netuid": 110,
+"name": "Rich Kids of TAO (\u0400)",
+"alpha_price_tao": 0.004204321,
+"emission_tau_per_day": 15.1355016,
+"alpha_emission_tau_per_day": 30.271111199999996,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"111": {
+"e": 592760,
+"b": 1435777,
+"overview": {
+"netuid": 111,
+"name": "oneoneone (\u0401)",
+"alpha_price_tao": 0.00418765,
+"emission_tau_per_day": 4.267872,
+"alpha_emission_tau_per_day": 30.15108,
+"neuron_registration_cost_tao": 0.001435777,
+"incentive_burn_rate": 0.25514610513466085
+}
+},
+"112": {
+"e": 0,
+"b": 520744,
+"overview": {
+"netuid": 112,
+"name": "minotaur (\u0402)",
+"alpha_price_tao": 0.005408525,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 38.94138,
+"neuron_registration_cost_tao": 0.000520744,
+"incentive_burn_rate": 1.0
+}
+},
+"113": {
+"e": 2270120,
+"b": 1000000,
+"overview": {
+"netuid": 113,
+"name": "TensorUSD (\u0403)",
+"alpha_price_tao": 0.004540276,
+"emission_tau_per_day": 16.344864,
+"alpha_emission_tau_per_day": 32.689987200000004,
+"neuron_registration_cost_tao": 0.001,
+"incentive_burn_rate": 1.0
+}
+},
+"114": {
+"e": 4661480,
+"b": 50000000,
+"overview": {
+"netuid": 114,
+"name": "SOMA (\u0404)",
+"alpha_price_tao": 0.009323122,
+"emission_tau_per_day": 33.562656,
+"alpha_emission_tau_per_day": 67.1264784,
+"neuron_registration_cost_tao": 0.05,
+"incentive_burn_rate": 0.7991912718394751
+}
+},
+"115": {
+"e": 117069,
+"b": 500000,
+"overview": {
+"netuid": 115,
+"name": "HashiChain (\u0405)",
+"alpha_price_tao": 0.008204771,
+"emission_tau_per_day": 0.8428968,
+"alpha_emission_tau_per_day": 59.074351199999995,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"116": {
+"e": 1005868,
+"b": 500000,
+"overview": {
+"netuid": 116,
+"name": "TaoLend (\u2d35)",
+"alpha_price_tao": 0.003600999,
+"emission_tau_per_day": 7.2422496,
+"alpha_emission_tau_per_day": 25.9271928,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+},
+"117": {
+"e": 0,
+"b": 200000000,
+"overview": {
+"netuid": 117,
+"name": "BrainPlay (\u2c80)",
+"alpha_price_tao": 0.003428612,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 24.6860064,
+"neuron_registration_cost_tao": 0.2,
+"incentive_burn_rate": 1.0
+}
+},
+"118": {
+"e": 41575,
+"b": 500000,
+"overview": {
+"netuid": 118,
+"name": "HODL Exchange (\u2c81)",
+"alpha_price_tao": 0.003185331,
+"emission_tau_per_day": 0.29934,
+"alpha_emission_tau_per_day": 22.9343832,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.8
+}
+},
+"119": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 119,
+"name": "Satori (\u2c82)",
+"alpha_price_tao": 0.00642869,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 46.286568,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"120": {
+"e": 21374040,
+"b": 165182062,
+"overview": {
+"netuid": 120,
+"name": "Affine (\u2d37)",
+"alpha_price_tao": 0.076857154,
+"emission_tau_per_day": 153.893088,
+"alpha_emission_tau_per_day": 553.3715088,
+"neuron_registration_cost_tao": 0.165182062,
+"incentive_burn_rate": 0.0
+}
+},
+"121": {
+"e": 4368831,
+"b": 500000,
+"overview": {
+"netuid": 121,
+"name": "sundae_bar (\u2c84)",
+"alpha_price_tao": 0.008737791,
+"emission_tau_per_day": 31.4555832,
+"alpha_emission_tau_per_day": 62.9120952,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"122": {
+"e": 0,
+"b": 10000000,
+"overview": {
+"netuid": 122,
+"name": "Bitrecs (\u2c85)",
+"alpha_price_tao": 0.00441025,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 31.753800000000002,
+"neuron_registration_cost_tao": 0.01,
+"incentive_burn_rate": 1.0
+}
+},
+"123": {
+"e": 0,
+"b": 300000000,
+"overview": {
+"netuid": 123,
+"name": "MANTIS (\ud804\udc00)",
+"alpha_price_tao": 0.004640924,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 33.4146528,
+"neuron_registration_cost_tao": 0.3,
+"incentive_burn_rate": 0.32030212863355456
+}
+},
+"124": {
+"e": 3479850,
+"b": 500000,
+"overview": {
+"netuid": 124,
+"name": "Swarm (\ud804\udc01)",
+"alpha_price_tao": 0.007411238,
+"emission_tau_per_day": 25.05492,
+"alpha_emission_tau_per_day": 53.360913599999996,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.9518272678721293
+}
+},
+"125": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 125,
+"name": "8 Ball (\ud804\udc02)",
+"alpha_price_tao": 0.005406308,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 38.9254176,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 1.0
+}
+},
+"126": {
+"e": 4132927,
+"b": 3588403,
+"overview": {
+"netuid": 126,
+"name": "Poker44 (\ud804\udc03)",
+"alpha_price_tao": 0.008266006,
+"emission_tau_per_day": 29.7570744,
+"alpha_emission_tau_per_day": 59.51524319999999,
+"neuron_registration_cost_tao": 0.003588403,
+"incentive_burn_rate": 0.9764400701915007
+}
+},
+"127": {
+"e": 0,
+"b": 500000,
+"overview": {
+"netuid": 127,
+"name": "Astrid (\ud804\udc05)",
+"alpha_price_tao": 0.005337043,
+"emission_tau_per_day": 0.0,
+"alpha_emission_tau_per_day": 38.426709599999995,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.794720378423743
+}
+},
+"128": {
+"e": 581898,
+"b": 500000,
+"overview": {
+"netuid": 128,
+"name": "ByteLeap (\u0db1)",
+"alpha_price_tao": 0.003526926,
+"emission_tau_per_day": 4.1896656,
+"alpha_emission_tau_per_day": 25.393867200000003,
+"neuron_registration_cost_tao": 0.0005,
+"incentive_burn_rate": 0.0
+}
+}
+},
+"blocks_per_day": 7200
 }
 ]

@@ -99,3 +99,8 @@ Then open http://127.0.0.1:8765 — the same server serves `frontend/dist` and `
 Until a snapshot exists from about one lookback period ago, the UI explains that history is still building (refresh periodically or leave a scheduler running).
 
 **Note:** The default rule compares **two day-over-day percentage changes** (chain `emission` vs. registration burn), not absolute TAO amounts.
+
+node 
+v23.3.0
+python
+v3.12.3
