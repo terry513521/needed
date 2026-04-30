@@ -18,10 +18,11 @@ Or:  python -m dashboard.app
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,6 +40,18 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from dashboard.favorites import (
+    DEFAULT_CONFIG as FAVORITES_DEFAULT_PATH,
+    add_favorite,
+    favorites_yaml_path,
+    load_favorites,
+    remove_favorite,
+    set_favorites,
+)
+from dashboard.favorites_notifier import (
+    notify_interval_sec as favorites_notify_interval_sec,
+    run_favorites_notifier,
+)
 from dashboard.hotkeys import (
     DEFAULT_CONFIG as HOTKEYS_DEFAULT_PATH,
     add_hotkey,
@@ -55,6 +68,11 @@ from dashboard.taostats_client import (
     divergence_from_snapshot_file,
     fetch_subnet_overview,
     run_taostats_cycle,
+)
+from dashboard.telegram_notify import (
+    is_telegram_configured,
+    send_telegram_message,
+    telegram_settings,
 )
 
 _SPA_DIST = _REPO_ROOT / "frontend" / "dist"
@@ -79,6 +97,21 @@ class HotkeyRemoveBody(BaseModel):
     ss58: str
 
 
+class FavoriteBody(BaseModel):
+    netuid: int
+
+
+class FavoritesSetBody(BaseModel):
+    favorites: list[int] = Field(default_factory=list)
+
+
+class TelegramTestBody(BaseModel):
+    text: str | None = Field(
+        default=None,
+        description="Optional override; defaults to a short hello message.",
+    )
+
+
 def _cors_origins() -> list[str]:
     raw = os.environ.get("DASHBOARD_CORS_ORIGINS", "").strip()
     if raw:
@@ -94,7 +127,16 @@ async def _lifespan(_: FastAPI):
         "logging ready (DASHBOARD_LOG_LEVEL=%s)",
         os.environ.get("DASHBOARD_LOG_LEVEL", "INFO").strip() or "INFO",
     )
-    yield
+    notifier_task = asyncio.create_task(
+        run_favorites_notifier(),
+        name="favorites_notifier",
+    )
+    try:
+        yield
+    finally:
+        notifier_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await notifier_task
 
 
 app = FastAPI(
@@ -157,6 +199,10 @@ def api_config() -> dict:
         "request_timeout_sec": REQUEST_TIMEOUT,
         "hotkeys_config_path": os.environ.get("BITTENSOR_TOOLS_HOTKEYS", "").strip()
         or str(HOTKEYS_DEFAULT_PATH),
+        "favorites_config_path": str(favorites_yaml_path()),
+        "favorites_default_path": str(FAVORITES_DEFAULT_PATH),
+        "favorites_notify_interval_sec": favorites_notify_interval_sec(),
+        "telegram_configured": is_telegram_configured(),
         "bittensor_network_override": net or None,
         "dashboard_host": os.environ.get("DASHBOARD_HOST", "127.0.0.1"),
         "dashboard_port": int(os.environ.get("DASHBOARD_PORT", "8765")),
@@ -260,6 +306,83 @@ def api_hotkeys_check(
     except Exception as e:  # noqa: BLE001
         log.exception("hotkeys check failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/favorites")
+def api_favorites_list() -> dict:
+    """Currently favorited netuids (sorted, deduped)."""
+    return {"favorites": load_favorites()}
+
+
+@app.post("/api/favorites/add")
+def api_favorites_add(body: FavoriteBody) -> dict:
+    try:
+        favs = add_favorite(body.netuid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        log.exception("favorites write failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
+    log.info("favorite added netuid=%s", body.netuid)
+    return {"favorites": favs}
+
+
+@app.post("/api/favorites/remove")
+def api_favorites_remove(body: FavoriteBody) -> dict:
+    try:
+        favs = remove_favorite(body.netuid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        log.exception("favorites write failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
+    log.info("favorite removed netuid=%s", body.netuid)
+    return {"favorites": favs}
+
+
+@app.post("/api/favorites")
+def api_favorites_set(body: FavoritesSetBody) -> dict:
+    """Replace the entire favorites list (used for one-shot localStorage migration)."""
+    try:
+        favs = set_favorites(list(body.favorites))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        log.exception("favorites write failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
+    log.info("favorites set count=%s", len(favs))
+    return {"favorites": favs}
+
+
+@app.get("/api/notifications/telegram/status")
+def api_telegram_status() -> dict:
+    """Whether Telegram credentials are present and the digest cadence."""
+    token, chat_id = telegram_settings()
+    return {
+        "configured": bool(token and chat_id),
+        "has_token": bool(token),
+        "has_chat_id": bool(chat_id),
+        "interval_sec": favorites_notify_interval_sec(),
+    }
+
+
+@app.post("/api/notifications/telegram/test")
+def api_telegram_test(
+    body: TelegramTestBody = Body(default_factory=TelegramTestBody),
+) -> dict:
+    """Send a one-off test message to confirm the bot is wired up correctly."""
+    text = (body.text or "").strip() or (
+        "<b>bittensor-tools</b>: Telegram is wired up. "
+        "You'll get favorite-subnet status digests from now on."
+    )
+    try:
+        send_telegram_message(text)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 — surface network errors verbatim
+        log.exception("telegram test send failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"ok": True}
 
 
 if _SPA_ASSETS.is_dir():

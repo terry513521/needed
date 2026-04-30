@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { fetchJson } from "./api";
 import type {
   DashboardConfig,
+  FavoritesResponse,
   HotkeysCheckResponse,
   HotkeysConfigResponse,
   SubnetOverviewRow,
   TaostatsDivergenceResponse,
   TaostatsOverviewResponse,
+  TelegramStatus,
 } from "./types";
 import "./App.css";
 
@@ -109,7 +111,7 @@ function hotkeysConfigToUiRows(h: HotkeysConfigResponse): HotkeyUiRow[] {
   }));
 }
 
-type MainTab = "taostats" | "hotkeys";
+type MainTab = "taostats" | "favorites" | "hotkeys";
 
 type OverviewDeltaRow = {
   emission: number | null;
@@ -118,6 +120,43 @@ type OverviewDeltaRow = {
   reg: number | null;
   actualReward: number | null;
 };
+
+/**
+ * Legacy localStorage key — favorites are now persisted on the backend via
+ * /api/favorites so the 10-min Telegram digest can read them. This key is kept
+ * only so existing browser-side favorites get migrated once on first load.
+ */
+const LEGACY_FAVORITES_STORAGE_KEY = "bittensor-tools.favorite-subnets";
+
+function readLegacyFavorites(): number[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LEGACY_FAVORITES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const out: number[] = [];
+    const seen = new Set<number>();
+    for (const v of parsed) {
+      const n = typeof v === "number" ? v : Number(v);
+      if (!Number.isInteger(n) || n < 0 || seen.has(n)) continue;
+      seen.add(n);
+      out.push(n);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function clearLegacyFavorites(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(LEGACY_FAVORITES_STORAGE_KEY);
+  } catch {
+    /* private mode / quota — best-effort. */
+  }
+}
 
 export default function App() {
   const [mainTab, setMainTab] = useState<MainTab>("taostats");
@@ -140,6 +179,82 @@ export default function App() {
   const [hotkeyRows, setHotkeyRows] = useState<HotkeyUiRow[]>([]);
   const [hotkeysListError, setHotkeysListError] = useState<string | null>(null);
   const [hotkeysActionError, setHotkeysActionError] = useState<string | null>(null);
+
+  const [favorites, setFavorites] = useState<Set<number>>(() => new Set());
+  const [favoritesError, setFavoritesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetchJson<FavoritesResponse>("/api/favorites");
+        if (cancelled) return;
+        let serverList = Array.isArray(resp.favorites) ? resp.favorites : [];
+        const legacy = readLegacyFavorites();
+        if (serverList.length === 0 && legacy.length > 0) {
+          try {
+            const migrated = await fetchJson<FavoritesResponse>("/api/favorites", {
+              method: "POST",
+              body: JSON.stringify({ favorites: legacy }),
+            });
+            if (Array.isArray(migrated.favorites)) serverList = migrated.favorites;
+          } catch {
+            /* migration is best-effort — fall back to whatever the server returned. */
+          }
+        }
+        if (legacy.length > 0) clearLegacyFavorites();
+        if (!cancelled) {
+          setFavorites(new Set(serverList));
+          setFavoritesError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setFavoritesError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleFavorite = useCallback(async (netuid: number) => {
+    let wasFav = false;
+    setFavorites((prev) => {
+      wasFav = prev.has(netuid);
+      const next = new Set(prev);
+      if (wasFav) next.delete(netuid);
+      else next.add(netuid);
+      return next;
+    });
+    try {
+      const resp = await fetchJson<FavoritesResponse>(
+        wasFav ? "/api/favorites/remove" : "/api/favorites/add",
+        {
+          method: "POST",
+          body: JSON.stringify({ netuid }),
+        },
+      );
+      if (Array.isArray(resp.favorites)) {
+        setFavorites(new Set(resp.favorites));
+      }
+      setFavoritesError(null);
+    } catch (e) {
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (wasFav) next.add(netuid);
+        else next.delete(netuid);
+        return next;
+      });
+      setFavoritesError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const favoriteOverviewData = useMemo<TaostatsOverviewResponse | null>(() => {
+    if (!overviewData) return null;
+    return {
+      ...overviewData,
+      subnets: overviewData.subnets.filter((s) => favorites.has(s.netuid)),
+    };
+  }, [overviewData, favorites]);
 
   const applyHotkeysConfig = useCallback((h: HotkeysConfigResponse) => {
     setHotkeyNetwork(h.network);
@@ -412,6 +527,19 @@ export default function App() {
           <button
             type="button"
             role="tab"
+            id="tab-favorites"
+            className={`tab-btn ${mainTab === "favorites" ? "active" : ""}`}
+            aria-selected={mainTab === "favorites"}
+            aria-controls="panel-favorites"
+            tabIndex={mainTab === "favorites" ? 0 : -1}
+            onClick={() => setMainTab("favorites")}
+          >
+            Favorite subnets
+            {favorites.size > 0 ? <span className="tab-count"> ({favorites.size})</span> : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
             id="tab-hotkeys"
             className={`tab-btn ${mainTab === "hotkeys" ? "active" : ""}`}
             aria-selected={mainTab === "hotkeys"}
@@ -485,6 +613,8 @@ export default function App() {
             data={overviewData}
             deltas={overviewDeltas}
             highlightNetuids={highDivergenceNetuids}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
           />
           <h3 className="subsection-title">24h emission vs burn divergence</h3>
           <p className={taostatsWarnIsError ? "msg warn" : "msg"}>{taostatsWarn}</p>
@@ -504,6 +634,44 @@ export default function App() {
               </a>
             </p>
           ) : null}
+        </div>
+
+        <div
+          id="panel-favorites"
+          role="tabpanel"
+          aria-labelledby="tab-favorites"
+          hidden={mainTab !== "favorites"}
+          className="tab-panel"
+        >
+          <p className="sub">
+            Subnets you starred on the <strong>Taostats monitor</strong> tab. Favorites are
+            persisted to <code>{config?.favorites_config_path ?? "favorites.yaml"}</code> on the
+            server, so the backend can push a Telegram digest every{" "}
+            {Math.round((config?.favorites_notify_interval_sec ?? 600) / 60)} min.
+          </p>
+          {favoritesError ? (
+            <p className="msg warn">Favorites sync error: {favoritesError}</p>
+          ) : null}
+          <h2>Favorite subnets</h2>
+          {favorites.size === 0 ? (
+            <p className="msg">
+              No favorites yet. Open the <strong>Taostats monitor</strong> tab and click the ☆
+              next to any subnet to pin it here.
+            </p>
+          ) : (
+            <SubnetOverviewTable
+              loading={overviewLoading}
+              error={overviewError}
+              data={favoriteOverviewData}
+              deltas={overviewDeltas}
+              highlightNetuids={highDivergenceNetuids}
+              favorites={favorites}
+              onToggleFavorite={toggleFavorite}
+              emptyMessage="None of your favorite subnets were returned in the latest overview."
+            />
+          )}
+          <h3 className="subsection-title">Telegram notifications</h3>
+          <TelegramSettings favoriteCount={favorites.size} />
         </div>
 
         <div
@@ -640,12 +808,18 @@ function SubnetOverviewTable({
   data,
   deltas,
   highlightNetuids,
+  favorites,
+  onToggleFavorite,
+  emptyMessage,
 }: {
   loading: boolean;
   error: string | null;
   data: TaostatsOverviewResponse | null;
   deltas: Record<number, OverviewDeltaRow>;
   highlightNetuids: Set<number>;
+  favorites: Set<number>;
+  onToggleFavorite: (netuid: number) => void;
+  emptyMessage?: string;
 }) {
   const [sortKey, setSortKey] = useState<OverviewSortKey>("netuid");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -671,7 +845,8 @@ function SubnetOverviewTable({
     return <p className="msg">Loading subnets…</p>;
   }
   if (!data?.subnets.length) {
-    return <p className="msg">{loading ? "Loading subnets…" : "No subnets returned."}</p>;
+    const fallback = emptyMessage ?? "No subnets returned.";
+    return <p className="msg">{loading ? "Loading subnets…" : fallback}</p>;
   }
   return (
     <>
@@ -685,6 +860,9 @@ function SubnetOverviewTable({
         <table className="subnet-overview-table">
           <thead>
             <tr>
+              <th scope="col" className="favorite-col" aria-label="Favorite">
+                <span aria-hidden="true">★</span>
+              </th>
               <OverviewSortTh
                 label="netuid"
                 colKey="netuid"
@@ -747,8 +925,25 @@ function SubnetOverviewTable({
             {sortedSubnets.map((r) => {
               const d = deltas[r.netuid];
               const rowHi = highlightNetuids.has(r.netuid);
+              const isFav = favorites.has(r.netuid);
               return (
                 <tr key={r.netuid} className={rowHi ? "row-high-divergence" : undefined}>
+                  <td className="favorite-col">
+                    <button
+                      type="button"
+                      className={`fav-btn${isFav ? " is-fav" : ""}`}
+                      onClick={() => onToggleFavorite(r.netuid)}
+                      aria-pressed={isFav}
+                      aria-label={
+                        isFav
+                          ? `Remove subnet ${r.netuid} from favorites`
+                          : `Add subnet ${r.netuid} to favorites`
+                      }
+                      title={isFav ? "Remove from favorites" : "Add to favorites"}
+                    >
+                      {isFav ? "★" : "☆"}
+                    </button>
+                  </td>
                   <td>
                     <a
                       href={`https://taostats.io/subnets/${r.netuid}`}
@@ -1018,5 +1213,95 @@ function HotkeysAddForm({ onSuccess }: { onSuccess: (h: HotkeysConfigResponse) =
         </button>
       </div>
     </form>
+  );
+}
+
+function TelegramSettings({ favoriteCount }: { favoriteCount: number }) {
+  const [status, setStatus] = useState<TelegramStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testIsError, setTestIsError] = useState(false);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const s = await fetchJson<TelegramStatus>("/api/notifications/telegram/status");
+      setStatus(s);
+      setStatusError(null);
+    } catch (e) {
+      setStatus(null);
+      setStatusError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
+  const onSendTest = useCallback(async () => {
+    setTesting(true);
+    setTestResult(null);
+    setTestIsError(false);
+    try {
+      await fetchJson<{ ok: boolean }>("/api/notifications/telegram/test", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setTestResult("Test message sent. Check your Telegram chat.");
+      setTestIsError(false);
+    } catch (e) {
+      setTestResult(e instanceof Error ? e.message : String(e));
+      setTestIsError(true);
+    } finally {
+      setTesting(false);
+    }
+  }, []);
+
+  const intervalMin =
+    status?.interval_sec != null ? Math.max(1, Math.round(status.interval_sec / 60)) : null;
+
+  return (
+    <div className="telegram-settings">
+      {statusError ? (
+        <p className="msg warn">Could not load Telegram status: {statusError}</p>
+      ) : status == null ? (
+        <p className="msg">Checking Telegram configuration…</p>
+      ) : status.configured ? (
+        <p className="msg">
+          <span className="badge ok">configured</span> Backend will push a digest of your{" "}
+          {favoriteCount === 1 ? "1 favorite subnet" : `${favoriteCount} favorite subnets`}{" "}
+          every {intervalMin ?? "—"} min while at least one favorite is set.
+        </p>
+      ) : (
+        <p className="msg warn">
+          <span className="badge bad">not configured</span> Set{" "}
+          <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> in <code>.env</code>{" "}
+          and restart the dashboard process to enable the 10-min digest.
+          {status.has_token && !status.has_chat_id ? " (TELEGRAM_CHAT_ID is missing.)" : null}
+          {!status.has_token && status.has_chat_id ? " (TELEGRAM_BOT_TOKEN is missing.)" : null}
+        </p>
+      )}
+      <div className="row">
+        <button
+          type="button"
+          className="btn-sm"
+          disabled={testing || !status?.configured}
+          onClick={onSendTest}
+          title={
+            status?.configured
+              ? "Send a hello message to the configured Telegram chat"
+              : "Configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID first"
+          }
+        >
+          {testing ? "Sending…" : "Send test message"}
+        </button>
+        <button type="button" className="btn-sm btn-muted" onClick={refreshStatus}>
+          Recheck
+        </button>
+        {testResult ? (
+          <span className={testIsError ? "msg warn" : "msg"}>{testResult}</span>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -6,9 +6,28 @@ export interface DashboardConfig {
   taostats_api_url: string;
   request_timeout_sec: number;
   hotkeys_config_path: string;
+  /** Path of favorites.yaml on disk (resolved). */
+  favorites_config_path?: string;
+  /** Default favorites.yaml path bundled with the repo. */
+  favorites_default_path?: string;
+  /** How often the backend pushes a Telegram favorites digest (seconds). */
+  favorites_notify_interval_sec?: number;
+  /** True when both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set. */
+  telegram_configured?: boolean;
   bittensor_network_override: string | null;
   dashboard_host: string;
   dashboard_port: number;
+}
+
+export interface FavoritesResponse {
+  favorites: number[];
+}
+
+export interface TelegramStatus {
+  configured: boolean;
+  has_token: boolean;
+  has_chat_id: boolean;
+  interval_sec: number;
 }
 
 export interface SubnetOverviewRow {
