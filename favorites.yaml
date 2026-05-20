@@ -1,5 +1,16 @@
 favorites:
-- 46
-- 62
-- 66
-- 100
+- netuid: 44
+  alerts: {}
+- netuid: 46
+  alerts: {}
+- netuid: 66
+  alerts: {}
+- netuid: 68
+  alerts: {}
+- netuid: 78
+  alerts:
+    burn_pct: 3.0
+- netuid: 102
+  alerts: {}
+- netuid: 120
+  alerts: {}

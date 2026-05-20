@@ -1,13 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { fetchJson } from "./api";
 import type {
   DashboardConfig,
+  FavoriteAlerts,
+  FavoriteEntry,
+  GithubMonitorStatus,
   FavoritesResponse,
   HotkeysCheckResponse,
   HotkeysConfigResponse,
   SubnetOverviewRow,
   TaostatsDivergenceResponse,
   TaostatsOverviewResponse,
+  DiscordStatus,
   TelegramStatus,
 } from "./types";
 import "./App.css";
@@ -158,6 +170,55 @@ function clearLegacyFavorites(): void {
   }
 }
 
+/** Coerce API / YAML values to deduped non-negative integer netuids. */
+function normalizeFavoriteIds(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  const out: number[] = [];
+  const seen = new Set<number>();
+  for (const v of raw) {
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isInteger(n) || n < 0 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
+/** Same column order as value cells in each favorite row (α price → TAO in → α emit → …). */
+const ALERT_METRIC_FIELDS: { key: keyof FavoriteAlerts; label: string; short: string }[] = [
+  { key: "alpha_price_pct", label: "Alpha price (τ/α)", short: "α price" },
+  { key: "root_emission_pct", label: "Root TAO in (τ/day)", short: "TAO in" },
+  { key: "alpha_emission_pct", label: "Alpha emission (τ/day)", short: "α emit" },
+  { key: "burn_pct", label: "Incentive burn", short: "burn" },
+  { key: "reg_pct", label: "Reg cost (τ)", short: "reg" },
+  { key: "actual_reward_pct", label: "Actual reward (τ/day)", short: "reward" },
+];
+
+function parseFavoritesResponse(resp: FavoritesResponse): {
+  ids: number[];
+  alerts: Record<number, FavoriteAlerts>;
+  github: Record<number, string | null>;
+} {
+  const raw = resp.favorites;
+  if (!Array.isArray(raw)) return { ids: [], alerts: {}, github: {} };
+  if (raw.length > 0 && typeof raw[0] === "number") {
+    const ids = normalizeFavoriteIds(raw);
+    return { ids, alerts: {}, github: {} };
+  }
+  const ids: number[] = [];
+  const alerts: Record<number, FavoriteAlerts> = {};
+  const github: Record<number, string | null> = {};
+  for (const item of raw as FavoriteEntry[]) {
+    if (!item || typeof item !== "object") continue;
+    const nu = Number(item.netuid);
+    if (!Number.isInteger(nu) || nu < 0) continue;
+    ids.push(nu);
+    alerts[nu] = item.alerts ?? {};
+    github[nu] = item.github_url ?? null;
+  }
+  return { ids: normalizeFavoriteIds(ids), alerts, github };
+}
+
 export default function App() {
   const [mainTab, setMainTab] = useState<MainTab>("taostats");
   const [config, setConfig] = useState<DashboardConfig | null>(null);
@@ -181,7 +242,30 @@ export default function App() {
   const [hotkeysActionError, setHotkeysActionError] = useState<string | null>(null);
 
   const [favorites, setFavorites] = useState<Set<number>>(() => new Set());
+  const [favoriteAlerts, setFavoriteAlerts] = useState<Record<number, FavoriteAlerts>>({});
+  const [favoriteGithub, setFavoriteGithub] = useState<Record<number, string | null>>({});
   const [favoritesError, setFavoritesError] = useState<string | null>(null);
+  const favoritesRef = useRef<Set<number>>(new Set());
+  /** When true, a late initial GET /api/favorites must not overwrite user toggles. */
+  const skipFavoritesHydrationRef = useRef(false);
+  const favoritesTogglingRef = useRef<Set<number>>(new Set());
+  const [favoritesToggling, setFavoritesToggling] = useState<Set<number>>(() => new Set());
+
+  const applyFavorites = useCallback((ids: number[]) => {
+    const next = new Set(ids);
+    favoritesRef.current = next;
+    setFavorites(next);
+  }, []);
+
+  const applyFavoritesConfig = useCallback(
+    (resp: FavoritesResponse) => {
+      const { ids, alerts, github } = parseFavoritesResponse(resp);
+      applyFavorites(ids);
+      setFavoriteAlerts(alerts);
+      setFavoriteGithub(github);
+    },
+    [applyFavorites],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -189,22 +273,24 @@ export default function App() {
       try {
         const resp = await fetchJson<FavoritesResponse>("/api/favorites");
         if (cancelled) return;
-        let serverList = Array.isArray(resp.favorites) ? resp.favorites : [];
+        let parsed = parseFavoritesResponse(resp);
         const legacy = readLegacyFavorites();
-        if (serverList.length === 0 && legacy.length > 0) {
+        if (parsed.ids.length === 0 && legacy.length > 0) {
           try {
             const migrated = await fetchJson<FavoritesResponse>("/api/favorites", {
               method: "POST",
               body: JSON.stringify({ favorites: legacy }),
             });
-            if (Array.isArray(migrated.favorites)) serverList = migrated.favorites;
+            parsed = parseFavoritesResponse(migrated);
           } catch {
             /* migration is best-effort — fall back to whatever the server returned. */
           }
         }
         if (legacy.length > 0) clearLegacyFavorites();
-        if (!cancelled) {
-          setFavorites(new Set(serverList));
+        if (!cancelled && !skipFavoritesHydrationRef.current) {
+          applyFavorites(parsed.ids);
+          setFavoriteAlerts(parsed.alerts);
+          setFavoriteGithub(parsed.github);
           setFavoritesError(null);
         }
       } catch (e) {
@@ -214,47 +300,60 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyFavoritesConfig]);
 
-  const toggleFavorite = useCallback(async (netuid: number) => {
-    let wasFav = false;
-    setFavorites((prev) => {
-      wasFav = prev.has(netuid);
-      const next = new Set(prev);
-      if (wasFav) next.delete(netuid);
-      else next.add(netuid);
-      return next;
-    });
-    try {
-      const resp = await fetchJson<FavoritesResponse>(
-        wasFav ? "/api/favorites/remove" : "/api/favorites/add",
-        {
-          method: "POST",
-          body: JSON.stringify({ netuid }),
-        },
-      );
-      if (Array.isArray(resp.favorites)) {
-        setFavorites(new Set(resp.favorites));
+  const toggleFavorite = useCallback(
+    async (netuid: number) => {
+      const nu = Number(netuid);
+      if (!Number.isInteger(nu) || nu < 0) return;
+      if (favoritesTogglingRef.current.has(nu)) return;
+
+      skipFavoritesHydrationRef.current = true;
+      favoritesTogglingRef.current.add(nu);
+      setFavoritesToggling((prev) => new Set(prev).add(nu));
+
+      const wasFav = favoritesRef.current.has(nu);
+      const optimistic = new Set(favoritesRef.current);
+      if (wasFav) optimistic.delete(nu);
+      else optimistic.add(nu);
+      favoritesRef.current = optimistic;
+      setFavorites(optimistic);
+
+      try {
+        const resp = await fetchJson<FavoritesResponse>(
+          wasFav ? "/api/favorites/remove" : "/api/favorites/add",
+          {
+            method: "POST",
+            body: JSON.stringify({ netuid: nu }),
+          },
+        );
+        applyFavoritesConfig(resp);
+        if (wasFav) {
+          setFavoriteAlerts((prev) => {
+            const next = { ...prev };
+            delete next[nu];
+            return next;
+          });
+        }
+        setFavoritesError(null);
+      } catch (e) {
+        const reverted = new Set(favoritesRef.current);
+        if (wasFav) reverted.add(nu);
+        else reverted.delete(nu);
+        favoritesRef.current = reverted;
+        setFavorites(reverted);
+        setFavoritesError(e instanceof Error ? e.message : String(e));
+      } finally {
+        favoritesTogglingRef.current.delete(nu);
+        setFavoritesToggling((prev) => {
+          const next = new Set(prev);
+          next.delete(nu);
+          return next;
+        });
       }
-      setFavoritesError(null);
-    } catch (e) {
-      setFavorites((prev) => {
-        const next = new Set(prev);
-        if (wasFav) next.add(netuid);
-        else next.delete(netuid);
-        return next;
-      });
-      setFavoritesError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
-
-  const favoriteOverviewData = useMemo<TaostatsOverviewResponse | null>(() => {
-    if (!overviewData) return null;
-    return {
-      ...overviewData,
-      subnets: overviewData.subnets.filter((s) => favorites.has(s.netuid)),
-    };
-  }, [overviewData, favorites]);
+    },
+    [applyFavoritesConfig],
+  );
 
   const applyHotkeysConfig = useCallback((h: HotkeysConfigResponse) => {
     setHotkeyNetwork(h.network);
@@ -615,6 +714,7 @@ export default function App() {
             highlightNetuids={highDivergenceNetuids}
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
+            favoritesToggling={favoritesToggling}
           />
           <h3 className="subsection-title">24h emission vs burn divergence</h3>
           <p className={taostatsWarnIsError ? "msg warn" : "msg"}>{taostatsWarn}</p>
@@ -644,10 +744,9 @@ export default function App() {
           className="tab-panel"
         >
           <p className="sub">
-            Subnets you starred on the <strong>Taostats monitor</strong> tab. Favorites are
-            persisted to <code>{config?.favorites_config_path ?? "favorites.yaml"}</code> on the
-            server, so the backend can push a Telegram digest every{" "}
-            {Math.round((config?.favorites_notify_interval_sec ?? 600) / 60)} min.
+            All favorites in one table. Click a row to expand <strong>alert thresholds</strong> and
+            an optional <strong>GitHub repo</strong> (new commits → Discord). Config:{" "}
+            <code>{config?.favorites_config_path ?? "favorites.yaml"}</code>.
           </p>
           {favoritesError ? (
             <p className="msg warn">Favorites sync error: {favoritesError}</p>
@@ -659,19 +758,22 @@ export default function App() {
               next to any subnet to pin it here.
             </p>
           ) : (
-            <SubnetOverviewTable
+            <FavoriteSubnetsList
               loading={overviewLoading}
-              error={overviewError}
-              data={favoriteOverviewData}
+              overviewError={overviewError}
+              overviewData={overviewData}
+              favoriteIds={[...favorites].sort((a, b) => a - b)}
+              favoriteAlerts={favoriteAlerts}
+              favoriteGithub={favoriteGithub}
               deltas={overviewDeltas}
               highlightNetuids={highDivergenceNetuids}
-              favorites={favorites}
               onToggleFavorite={toggleFavorite}
-              emptyMessage="None of your favorite subnets were returned in the latest overview."
+              favoritesToggling={favoritesToggling}
+              onAlertsSaved={applyFavoritesConfig}
             />
           )}
-          <h3 className="subsection-title">Telegram notifications</h3>
-          <TelegramSettings favoriteCount={favorites.size} />
+          <h3 className="subsection-title">Notifications</h3>
+          <FavoriteNotificationsSettings favoriteCount={favorites.size} />
         </div>
 
         <div
@@ -810,6 +912,7 @@ function SubnetOverviewTable({
   highlightNetuids,
   favorites,
   onToggleFavorite,
+  favoritesToggling,
   emptyMessage,
 }: {
   loading: boolean;
@@ -819,6 +922,7 @@ function SubnetOverviewTable({
   highlightNetuids: Set<number>;
   favorites: Set<number>;
   onToggleFavorite: (netuid: number) => void;
+  favoritesToggling: Set<number>;
   emptyMessage?: string;
 }) {
   const [sortKey, setSortKey] = useState<OverviewSortKey>("netuid");
@@ -925,14 +1029,17 @@ function SubnetOverviewTable({
             {sortedSubnets.map((r) => {
               const d = deltas[r.netuid];
               const rowHi = highlightNetuids.has(r.netuid);
-              const isFav = favorites.has(r.netuid);
+              const nu = Number(r.netuid);
+              const isFav = favorites.has(nu);
+              const toggling = favoritesToggling.has(nu);
               return (
                 <tr key={r.netuid} className={rowHi ? "row-high-divergence" : undefined}>
                   <td className="favorite-col">
                     <button
                       type="button"
                       className={`fav-btn${isFav ? " is-fav" : ""}`}
-                      onClick={() => onToggleFavorite(r.netuid)}
+                      disabled={toggling}
+                      onClick={() => onToggleFavorite(nu)}
                       aria-pressed={isFav}
                       aria-label={
                         isFav
@@ -1216,21 +1323,419 @@ function HotkeysAddForm({ onSuccess }: { onSuccess: (h: HotkeysConfigResponse) =
   );
 }
 
-function TelegramSettings({ favoriteCount }: { favoriteCount: number }) {
-  const [status, setStatus] = useState<TelegramStatus | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testIsError, setTestIsError] = useState(false);
+function CompactMetricCell({
+  value,
+  delta,
+}: {
+  value: string;
+  delta?: number | null;
+}) {
+  return (
+    <td className="compact-num">
+      <span className="compact-val">{value}</span>
+      {delta != null ? <span className="delta-pct compact-delta">{formatDeltaPct(delta)}</span> : null}
+    </td>
+  );
+}
+
+function FavoriteSubnetsList({
+  loading,
+  overviewError,
+  overviewData,
+  favoriteIds,
+  favoriteAlerts,
+  favoriteGithub,
+  deltas,
+  highlightNetuids,
+  onToggleFavorite,
+  favoritesToggling,
+  onAlertsSaved,
+}: {
+  loading: boolean;
+  overviewError: string | null;
+  overviewData: TaostatsOverviewResponse | null;
+  favoriteIds: number[];
+  favoriteAlerts: Record<number, FavoriteAlerts>;
+  favoriteGithub: Record<number, string | null>;
+  deltas: Record<number, OverviewDeltaRow>;
+  highlightNetuids: Set<number>;
+  onToggleFavorite: (netuid: number) => void;
+  favoritesToggling: Set<number>;
+  onAlertsSaved: (resp: FavoritesResponse) => void;
+}) {
+  const rowsByNetuid = useMemo(() => {
+    const m = new Map<number, SubnetOverviewRow>();
+    for (const s of overviewData?.subnets ?? []) {
+      m.set(Number(s.netuid), s);
+    }
+    return m;
+  }, [overviewData?.subnets]);
+
+  const [expandedNetuid, setExpandedNetuid] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, Record<string, string>>>({});
+  const [githubDrafts, setGithubDrafts] = useState<Record<number, string>>({});
+  const [savingNetuid, setSavingNetuid] = useState<number | null>(null);
+  const [savingGithubNetuid, setSavingGithubNetuid] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const valueColCount = 6;
+  const totalColCount = 3 + valueColCount + 1;
+
+  const toggleExpand = (netuid: number) => {
+    setExpandedNetuid((prev) => (prev === netuid ? null : netuid));
+  };
+
+  const countTriggers = (netuid: number) =>
+    ALERT_METRIC_FIELDS.filter((m) => {
+      const raw = (drafts[netuid]?.[m.key] ?? "").trim();
+      return raw !== "" && Number(raw) > 0;
+    }).length;
+
+  useEffect(() => {
+    if (expandedNetuid != null && !favoriteIds.includes(expandedNetuid)) {
+      setExpandedNetuid(null);
+    }
+  }, [favoriteIds, expandedNetuid]);
+
+  useEffect(() => {
+    const d: Record<number, Record<string, string>> = {};
+    for (const nu of favoriteIds) {
+      const a = favoriteAlerts[nu] ?? {};
+      d[nu] = {};
+      for (const { key } of ALERT_METRIC_FIELDS) {
+        const v = a[key];
+        d[nu][key] = v != null && v > 0 ? String(v) : "";
+      }
+    }
+    setDrafts(d);
+  }, [favoriteIds, favoriteAlerts]);
+
+  useEffect(() => {
+    const g: Record<number, string> = {};
+    for (const nu of favoriteIds) {
+      g[nu] = favoriteGithub[nu] ?? "";
+    }
+    setGithubDrafts(g);
+  }, [favoriteIds, favoriteGithub]);
+
+  const setTriggerField = (netuid: number, key: string, value: string) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [netuid]: { ...(prev[netuid] ?? {}), [key]: value },
+    }));
+  };
+
+  const saveTriggers = async (netuid: number) => {
+    setSavingNetuid(netuid);
+    setSaveError(null);
+    const row = drafts[netuid] ?? {};
+    const body: FavoriteAlerts = {};
+    for (const { key } of ALERT_METRIC_FIELDS) {
+      const raw = (row[key] ?? "").trim();
+      if (!raw) {
+        body[key] = null;
+        continue;
+      }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        setSaveError(`Subnet ${netuid}: enter a positive % or leave blank.`);
+        setSavingNetuid(null);
+        return;
+      }
+      body[key] = n;
+    }
+    try {
+      const resp = await fetchJson<FavoritesResponse>("/api/favorites/alerts", {
+        method: "POST",
+        body: JSON.stringify({ netuid, alerts: body }),
+      });
+      onAlertsSaved(resp);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingNetuid(null);
+    }
+  };
+
+  const saveGithub = async (netuid: number) => {
+    setSavingGithubNetuid(netuid);
+    setSaveError(null);
+    const raw = (githubDrafts[netuid] ?? "").trim();
+    try {
+      const resp = await fetchJson<FavoritesResponse>("/api/favorites/github", {
+        method: "POST",
+        body: JSON.stringify({ netuid, github_url: raw || null }),
+      });
+      onAlertsSaved(resp);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingGithubNetuid(null);
+    }
+  };
+
+  if (loading && !overviewData) {
+    return <p className="msg">Loading subnets…</p>;
+  }
+
+  const missingCount = favoriteIds.filter((nu) => !rowsByNetuid.has(nu)).length;
+
+  return (
+    <>
+      {overviewData?.pool_warning ? <p className="msg warn">{overviewData.pool_warning}</p> : null}
+      {overviewError ? <p className="msg warn">Last refresh issue: {overviewError}</p> : null}
+      {saveError ? <p className="msg warn">{saveError}</p> : null}
+      {missingCount > 0 ? (
+        <p className="msg footer-hint">
+          {missingCount} favorite{missingCount === 1 ? "" : "s"} missing from latest overview.
+        </p>
+      ) : null}
+      <p className="msg footer-hint compact-table-hint">
+        Click a row to set alert |Δ%| thresholds and a GitHub repo URL. Blue % = change vs last
+        refresh.
+      </p>
+      <div className="table-scroll">
+        <table className="favorites-compact-table">
+          <thead>
+            <tr>
+              <th className="favorite-col" aria-label="Favorite">
+                ★
+              </th>
+              <th>#</th>
+              <th>Name</th>
+              {ALERT_METRIC_FIELDS.map((m) => (
+                <th key={m.key} title={m.label}>
+                  {m.short}
+                </th>
+              ))}
+              <th className="expand-col" aria-label="Expand alerts">
+                {" "}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {favoriteIds.map((nu) => {
+              const row = rowsByNetuid.get(nu);
+              const d = deltas[nu];
+              const hi = highlightNetuids.has(nu);
+              const expanded = expandedNetuid === nu;
+              const triggerCount = countTriggers(nu);
+              const hasGithub = Boolean((favoriteGithub[nu] ?? "").trim());
+              const ar = row
+                ? actualRewardTauPerDay(
+                    row.alpha_emission_tau_per_day ?? null,
+                    row.incentive_burn_rate,
+                  )
+                : null;
+              return (
+                <Fragment key={nu}>
+                  <tr
+                    className={[
+                      "fav-row-clickable",
+                      hi ? "row-high-divergence" : "",
+                      expanded ? "fav-row-expanded" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => toggleExpand(nu)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter" || ev.key === " ") {
+                        ev.preventDefault();
+                        toggleExpand(nu);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-expanded={expanded}
+                    aria-controls={`fav-alerts-${nu}`}
+                  >
+                    <td className="favorite-col">
+                      <button
+                        type="button"
+                        className="fav-btn is-fav"
+                        disabled={favoritesToggling.has(nu)}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          onToggleFavorite(nu);
+                        }}
+                        aria-label={`Remove subnet ${nu} from favorites`}
+                        title="Unfavorite"
+                      >
+                        ★
+                      </button>
+                    </td>
+                    <td>
+                      <a
+                        href={`https://taostats.io/subnets/${nu}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        {nu}
+                      </a>
+                    </td>
+                    <td className="subnet-name-cell">{row?.name ?? "—"}</td>
+                    {row ? (
+                      <>
+                        <CompactMetricCell value={formatAlphaPrice(row.alpha_price_tao)} />
+                        <CompactMetricCell
+                          value={formatTaoDay(row.emission_tau_per_day)}
+                          delta={d?.emission}
+                        />
+                        <CompactMetricCell
+                          value={formatTaoDay(row.alpha_emission_tau_per_day ?? null)}
+                          delta={d?.alphaEmission}
+                        />
+                        <CompactMetricCell
+                          value={formatBurnPct(row.incentive_burn_rate)}
+                          delta={d?.burn}
+                        />
+                        <CompactMetricCell
+                          value={formatRegCostTau(row.neuron_registration_cost_tao)}
+                          delta={d?.reg}
+                        />
+                        <CompactMetricCell value={formatTaoDay(ar)} delta={d?.actualReward} />
+                      </>
+                    ) : (
+                      <td colSpan={valueColCount} className="msg">
+                        —
+                      </td>
+                    )}
+                    <td className="expand-col">
+                      <span className="expand-ind" aria-hidden="true">
+                        {expanded ? "▼" : "▶"}
+                      </span>
+                      {triggerCount > 0 ? (
+                        <span className="trigger-badge">{triggerCount}</span>
+                      ) : null}
+                      {hasGithub ? (
+                        <span className="trigger-badge github-badge" title="GitHub monitored">
+                          GH
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                  {expanded ? (
+                    <>
+                    <tr
+                      className="fav-alerts-detail-row"
+                      id={`fav-alerts-${nu}`}
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <td colSpan={3} className="fav-alerts-lead-cell">
+                        <span className="fav-alerts-lead" title="Telegram alert when |Δ%| ≥ threshold">
+                          |Δ%| ≥
+                        </span>
+                      </td>
+                      {ALERT_METRIC_FIELDS.map((m) => (
+                        <td key={m.key} className="fav-alert-cell" title={m.label}>
+                          <div className="fav-alert-cell-inner">
+                            <span className="fav-alert-cell-label">{m.short}</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className="alert-threshold-input"
+                              placeholder="—"
+                              value={drafts[nu]?.[m.key] ?? ""}
+                              onChange={(ev) => setTriggerField(nu, m.key, ev.target.value)}
+                              aria-label={`${m.label} threshold percent`}
+                            />
+                          </div>
+                        </td>
+                      ))}
+                      <td className="expand-col fav-alert-actions-cell">
+                        <button
+                          type="button"
+                          className="btn-sm"
+                          disabled={savingNetuid === nu}
+                          onClick={() => saveTriggers(nu)}
+                        >
+                          {savingNetuid === nu ? "…" : "Save"}
+                        </button>
+                        {triggerCount === 0 ? (
+                          <span className="fav-alert-inline-warn" title="No thresholds set">
+                            none
+                          </span>
+                        ) : null}
+                      </td>
+                    </tr>
+                    <tr
+                      className="fav-github-detail-row"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <td colSpan={totalColCount} className="fav-github-cell">
+                        <div className="fav-github-inner">
+                          <label className="fav-github-label" htmlFor={`fav-github-${nu}`}>
+                            GitHub repo
+                          </label>
+                          <input
+                            id={`fav-github-${nu}`}
+                            type="url"
+                            className="fav-github-input"
+                            placeholder="https://github.com/owner/repo"
+                            value={githubDrafts[nu] ?? ""}
+                            onChange={(ev) =>
+                              setGithubDrafts((prev) => ({
+                                ...prev,
+                                [nu]: ev.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="btn-sm"
+                            disabled={savingGithubNetuid === nu}
+                            onClick={() => saveGithub(nu)}
+                          >
+                            {savingGithubNetuid === nu ? "…" : "Save GitHub"}
+                          </button>
+                          <span className="fav-github-hint">
+                            New commits on the default branch post to Discord (
+                            <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code>).
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                    </>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: number }) {
+  const [tgStatus, setTgStatus] = useState<TelegramStatus | null>(null);
+  const [dcStatus, setDcStatus] = useState<DiscordStatus | null>(null);
+  const [ghStatus, setGhStatus] = useState<GithubMonitorStatus | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [tgTesting, setTgTesting] = useState(false);
+  const [dcTesting, setDcTesting] = useState(false);
+  const [ghTesting, setGhTesting] = useState(false);
+  const [tgTestResult, setTgTestResult] = useState<string | null>(null);
+  const [dcTestResult, setDcTestResult] = useState<string | null>(null);
+  const [ghTestResult, setGhTestResult] = useState<string | null>(null);
+  const [tgTestIsError, setTgTestIsError] = useState(false);
+  const [dcTestIsError, setDcTestIsError] = useState(false);
+  const [ghTestIsError, setGhTestIsError] = useState(false);
 
   const refreshStatus = useCallback(async () => {
     try {
-      const s = await fetchJson<TelegramStatus>("/api/notifications/telegram/status");
-      setStatus(s);
-      setStatusError(null);
+      const [tg, dc, gh] = await Promise.all([
+        fetchJson<TelegramStatus>("/api/notifications/telegram/status"),
+        fetchJson<DiscordStatus>("/api/notifications/discord/status"),
+        fetchJson<GithubMonitorStatus>("/api/notifications/github/status"),
+      ]);
+      setTgStatus(tg);
+      setDcStatus(dc);
+      setGhStatus(gh);
+      setLoadError(null);
     } catch (e) {
-      setStatus(null);
-      setStatusError(e instanceof Error ? e.message : String(e));
+      setLoadError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -1238,69 +1743,209 @@ function TelegramSettings({ favoriteCount }: { favoriteCount: number }) {
     refreshStatus();
   }, [refreshStatus]);
 
-  const onSendTest = useCallback(async () => {
-    setTesting(true);
-    setTestResult(null);
-    setTestIsError(false);
+  const onTgTest = useCallback(async () => {
+    setTgTesting(true);
+    setTgTestResult(null);
+    setTgTestIsError(false);
     try {
       await fetchJson<{ ok: boolean }>("/api/notifications/telegram/test", {
         method: "POST",
         body: JSON.stringify({}),
       });
-      setTestResult("Test message sent. Check your Telegram chat.");
-      setTestIsError(false);
+      setTgTestResult("Sent. Check Telegram.");
+      setTgTestIsError(false);
     } catch (e) {
-      setTestResult(e instanceof Error ? e.message : String(e));
-      setTestIsError(true);
+      setTgTestResult(e instanceof Error ? e.message : String(e));
+      setTgTestIsError(true);
     } finally {
-      setTesting(false);
+      setTgTesting(false);
+    }
+  }, []);
+
+  const onDcTest = useCallback(async () => {
+    setDcTesting(true);
+    setDcTestResult(null);
+    setDcTestIsError(false);
+    try {
+      await fetchJson<{ ok: boolean }>("/api/notifications/discord/test", {
+        method: "POST",
+        body: JSON.stringify({ channel: "favorites" }),
+      });
+      setDcTestResult("Sent. Check your Discord channel.");
+      setDcTestIsError(false);
+    } catch (e) {
+      setDcTestResult(e instanceof Error ? e.message : String(e));
+      setDcTestIsError(true);
+    } finally {
+      setDcTesting(false);
+    }
+  }, []);
+
+  const onGhTest = useCallback(async () => {
+    setGhTesting(true);
+    setGhTestResult(null);
+    setGhTestIsError(false);
+    try {
+      await fetchJson<{ ok: boolean }>("/api/notifications/discord/test", {
+        method: "POST",
+        body: JSON.stringify({
+          channel: "github_commit",
+          text: "**bittensor-tools**: GitHub commit alerts are wired up.",
+        }),
+      });
+      setGhTestResult("Sent. Check your GitHub-commit Discord channel.");
+      setGhTestIsError(false);
+    } catch (e) {
+      setGhTestResult(e instanceof Error ? e.message : String(e));
+      setGhTestIsError(true);
+    } finally {
+      setGhTesting(false);
     }
   }, []);
 
   const intervalMin =
-    status?.interval_sec != null ? Math.max(1, Math.round(status.interval_sec / 60)) : null;
+    tgStatus?.interval_sec != null
+      ? Math.max(1, Math.round(tgStatus.interval_sec / 60))
+      : dcStatus?.interval_sec != null
+        ? Math.max(1, Math.round(dcStatus.interval_sec / 60))
+        : null;
+
+  const ghPollMin =
+    ghStatus?.poll_interval_sec != null
+      ? Math.max(1, Math.round(ghStatus.poll_interval_sec / 60))
+      : null;
+
+  const anyChannel = Boolean(
+    tgStatus?.configured ||
+      dcStatus?.favorites_configured ||
+      dcStatus?.github_commit_configured,
+  );
 
   return (
-    <div className="telegram-settings">
-      {statusError ? (
-        <p className="msg warn">Could not load Telegram status: {statusError}</p>
-      ) : status == null ? (
-        <p className="msg">Checking Telegram configuration…</p>
-      ) : status.configured ? (
-        <p className="msg">
-          <span className="badge ok">configured</span> Backend will push a digest of your{" "}
-          {favoriteCount === 1 ? "1 favorite subnet" : `${favoriteCount} favorite subnets`}{" "}
-          every {intervalMin ?? "—"} min while at least one favorite is set.
-        </p>
-      ) : (
+    <div className="notification-settings">
+      <p className="msg footer-hint">
+        Polls every {intervalMin ?? "—"} min; sends when a favorite crosses its |Δ%| threshold.{" "}
+        {favoriteCount === 1 ? "1 favorite" : `${favoriteCount} favorites`} monitored.
+      </p>
+      {loadError ? <p className="msg warn">Could not load notification status: {loadError}</p> : null}
+      {!anyChannel && tgStatus && dcStatus ? (
         <p className="msg warn">
-          <span className="badge bad">not configured</span> Set{" "}
-          <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> in <code>.env</code>{" "}
-          and restart the dashboard process to enable the 10-min digest.
-          {status.has_token && !status.has_chat_id ? " (TELEGRAM_CHAT_ID is missing.)" : null}
-          {!status.has_token && status.has_chat_id ? " (TELEGRAM_BOT_TOKEN is missing.)" : null}
+          No notification channel configured. Set Telegram and/or{" "}
+          <code>DISCORD_WEBHOOK_FAVORITES</code> in <code>.env</code> and restart the dashboard.
         </p>
-      )}
-      <div className="row">
-        <button
-          type="button"
-          className="btn-sm"
-          disabled={testing || !status?.configured}
-          onClick={onSendTest}
-          title={
-            status?.configured
-              ? "Send a hello message to the configured Telegram chat"
-              : "Configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID first"
-          }
-        >
-          {testing ? "Sending…" : "Send test message"}
-        </button>
-        <button type="button" className="btn-sm btn-muted" onClick={refreshStatus}>
-          Recheck
-        </button>
-        {testResult ? (
-          <span className={testIsError ? "msg warn" : "msg"}>{testResult}</span>
+      ) : null}
+
+      <div className="notify-channel-block">
+        <h4 className="notify-channel-title">Telegram</h4>
+        {tgStatus == null && !loadError ? (
+          <p className="msg">Checking…</p>
+        ) : tgStatus?.configured ? (
+          <p className="msg">
+            <span className="badge ok">configured</span>
+          </p>
+        ) : (
+          <p className="msg warn">
+            <span className="badge bad">not configured</span>{" "}
+            <code>TELEGRAM_BOT_TOKEN</code> + <code>TELEGRAM_CHAT_ID</code>
+          </p>
+        )}
+        <div className="row">
+          <button
+            type="button"
+            className="btn-sm"
+            disabled={tgTesting || !tgStatus?.configured}
+            onClick={onTgTest}
+          >
+            {tgTesting ? "Sending…" : "Test Telegram"}
+          </button>
+          {tgTestResult ? (
+            <span className={tgTestIsError ? "msg warn" : "msg"}>{tgTestResult}</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="notify-channel-block">
+        <h4 className="notify-channel-title">Discord · favorites</h4>
+        {dcStatus == null && !loadError ? (
+          <p className="msg">Checking…</p>
+        ) : dcStatus?.favorites_configured ? (
+          <p className="msg">
+            <span className="badge ok">configured</span>{" "}
+            <code>DISCORD_WEBHOOK_FAVORITES</code>
+          </p>
+        ) : (
+          <p className="msg warn">
+            <span className="badge bad">not configured</span> Set{" "}
+            <code>DISCORD_WEBHOOK_FAVORITES</code> in <code>.env</code>
+          </p>
+        )}
+        <div className="row">
+          <button
+            type="button"
+            className="btn-sm"
+            disabled={dcTesting || !dcStatus?.favorites_configured}
+            onClick={onDcTest}
+          >
+            {dcTesting ? "Sending…" : "Test Discord"}
+          </button>
+          {dcTestResult ? (
+            <span className={dcTestIsError ? "msg warn" : "msg"}>{dcTestResult}</span>
+          ) : null}
+        </div>
+        {dcStatus && dcStatus.channels.length > 1 ? (
+          <p className="msg footer-hint">
+            Other Discord channels:{" "}
+            {dcStatus.channels
+              .filter((c) => c.key !== dcStatus.favorites_channel)
+              .map((c) => c.env_var)
+              .join(", ")}
+          </p>
         ) : null}
+      </div>
+
+      <div className="notify-channel-block">
+        <h4 className="notify-channel-title">Discord · GitHub commits</h4>
+        {ghStatus == null && !loadError ? (
+          <p className="msg">Checking…</p>
+        ) : ghStatus?.configured ? (
+          <p className="msg">
+            <span className="badge ok">configured</span>{" "}
+            <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code>
+            {ghStatus.monitored_count > 0 ? (
+              <>
+                {" "}
+                · monitoring {ghStatus.monitored_count} repo
+                {ghStatus.monitored_count === 1 ? "" : "s"} (poll ~{ghPollMin ?? "—"} min)
+              </>
+            ) : (
+              <> · add a GitHub URL on a favorite row to start monitoring</>
+            )}
+          </p>
+        ) : (
+          <p className="msg warn">
+            <span className="badge bad">not configured</span> Set{" "}
+            <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code> in <code>.env</code>
+          </p>
+        )}
+        <div className="row">
+          <button
+            type="button"
+            className="btn-sm"
+            disabled={ghTesting || !ghStatus?.configured}
+            onClick={onGhTest}
+          >
+            {ghTesting ? "Sending…" : "Test GitHub Discord"}
+          </button>
+          {ghTestResult ? (
+            <span className={ghTestIsError ? "msg warn" : "msg"}>{ghTestResult}</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="row">
+        <button type="button" className="btn-sm btn-muted" onClick={refreshStatus}>
+          Recheck all
+        </button>
       </div>
     </div>
   );

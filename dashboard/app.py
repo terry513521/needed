@@ -41,11 +41,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from dashboard.favorites import (
+    ALERT_METRIC_KEYS,
     DEFAULT_CONFIG as FAVORITES_DEFAULT_PATH,
     add_favorite,
+    favorites_api_payload,
     favorites_yaml_path,
-    load_favorites,
+    load_favorites_config,
     remove_favorite,
+    set_favorite_alerts,
+    set_favorite_github,
     set_favorites,
 )
 from dashboard.favorites_notifier import (
@@ -68,6 +72,18 @@ from dashboard.taostats_client import (
     divergence_from_snapshot_file,
     fetch_subnet_overview,
     run_taostats_cycle,
+)
+from dashboard.alert_dispatch import FAVORITES_DISCORD_CHANNEL, favorites_alerts_configured
+from dashboard.github_monitor import (
+    GITHUB_COMMIT_DISCORD_CHANNEL,
+    github_monitor_configured,
+    poll_interval_sec as github_poll_interval_sec,
+    run_github_monitor,
+)
+from dashboard.discord_notify import (
+    is_discord_channel_configured,
+    list_discord_channels,
+    send_discord_message,
 )
 from dashboard.telegram_notify import (
     is_telegram_configured,
@@ -105,11 +121,43 @@ class FavoritesSetBody(BaseModel):
     favorites: list[int] = Field(default_factory=list)
 
 
+class FavoriteAlertsBody(BaseModel):
+    """Per-metric |Δ%| thresholds; omit or null = disabled for that metric."""
+
+    alpha_price_pct: float | None = Field(None, ge=0, le=10000)
+    alpha_emission_pct: float | None = Field(None, ge=0, le=10000)
+    root_emission_pct: float | None = Field(None, ge=0, le=10000)
+    burn_pct: float | None = Field(None, ge=0, le=10000)
+    reg_pct: float | None = Field(None, ge=0, le=10000)
+    actual_reward_pct: float | None = Field(None, ge=0, le=10000)
+
+
+class FavoriteAlertsUpdateBody(BaseModel):
+    netuid: int
+    alerts: FavoriteAlertsBody
+
+
+class FavoriteGithubUpdateBody(BaseModel):
+    netuid: int
+    github_url: str | None = Field(
+        default=None,
+        description="https://github.com/owner/repo or empty to clear",
+    )
+
+
 class TelegramTestBody(BaseModel):
     text: str | None = Field(
         default=None,
         description="Optional override; defaults to a short hello message.",
     )
+
+
+class DiscordTestBody(BaseModel):
+    channel: str = Field(
+        default=FAVORITES_DISCORD_CHANNEL,
+        description="Discord channel key (env DISCORD_WEBHOOK_<KEY>).",
+    )
+    text: str | None = Field(default=None, description="Optional message override.")
 
 
 def _cors_origins() -> list[str]:
@@ -131,12 +179,17 @@ async def _lifespan(_: FastAPI):
         run_favorites_notifier(),
         name="favorites_notifier",
     )
+    github_task = asyncio.create_task(
+        run_github_monitor(),
+        name="github_monitor",
+    )
     try:
         yield
     finally:
-        notifier_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await notifier_task
+        for task in (notifier_task, github_task):
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(
@@ -203,6 +256,11 @@ def api_config() -> dict:
         "favorites_default_path": str(FAVORITES_DEFAULT_PATH),
         "favorites_notify_interval_sec": favorites_notify_interval_sec(),
         "telegram_configured": is_telegram_configured(),
+        "discord_favorites_configured": is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL),
+        "discord_github_commit_configured": is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL),
+        "github_commit_poll_interval_sec": github_poll_interval_sec(),
+        "github_monitor_configured": github_monitor_configured(),
+        "favorites_alerts_configured": favorites_alerts_configured(),
         "bittensor_network_override": net or None,
         "dashboard_host": os.environ.get("DASHBOARD_HOST", "127.0.0.1"),
         "dashboard_port": int(os.environ.get("DASHBOARD_PORT", "8765")),
@@ -310,8 +368,8 @@ def api_hotkeys_check(
 
 @app.get("/api/favorites")
 def api_favorites_list() -> dict:
-    """Currently favorited netuids (sorted, deduped)."""
-    return {"favorites": load_favorites()}
+    """Favorites with per-subnet Telegram alert thresholds."""
+    return favorites_api_payload()
 
 
 @app.post("/api/favorites/add")
@@ -324,7 +382,7 @@ def api_favorites_add(body: FavoriteBody) -> dict:
         log.exception("favorites write failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
     log.info("favorite added netuid=%s", body.netuid)
-    return {"favorites": favs}
+    return favorites_api_payload()
 
 
 @app.post("/api/favorites/remove")
@@ -337,21 +395,68 @@ def api_favorites_remove(body: FavoriteBody) -> dict:
         log.exception("favorites write failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
     log.info("favorite removed netuid=%s", body.netuid)
-    return {"favorites": favs}
+    return favorites_api_payload()
 
 
 @app.post("/api/favorites")
 def api_favorites_set(body: FavoritesSetBody) -> dict:
     """Replace the entire favorites list (used for one-shot localStorage migration)."""
     try:
-        favs = set_favorites(list(body.favorites))
+        set_favorites(list(body.favorites))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OSError as e:
         log.exception("favorites write failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
-    log.info("favorites set count=%s", len(favs))
-    return {"favorites": favs}
+    log.info("favorites set count=%s", len(body.favorites))
+    return favorites_api_payload()
+
+
+@app.post("/api/favorites/github")
+def api_favorites_github(body: FavoriteGithubUpdateBody) -> dict:
+    """Set or clear GitHub repo URL for a favorite subnet (commit monitoring)."""
+    try:
+        set_favorite_github(body.netuid, body.github_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        log.exception("favorites write failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
+    log.info("favorite github_url updated netuid=%s", body.netuid)
+    return favorites_api_payload()
+
+
+@app.post("/api/favorites/alerts")
+def api_favorites_alerts(body: FavoriteAlertsUpdateBody) -> dict:
+    """Set per-metric notification thresholds for one favorite subnet."""
+    try:
+        alerts_dict = body.alerts.model_dump(exclude_none=False)
+        set_favorite_alerts(body.netuid, alerts_dict)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        log.exception("favorites write failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Could not write favorites file: {e}") from e
+    log.info("favorite alerts updated netuid=%s", body.netuid)
+    return favorites_api_payload()
+
+
+@app.get("/api/favorites/alert-metrics")
+def api_favorites_alert_metrics() -> dict:
+    """Metric keys and labels for the dashboard alert form."""
+    labels = {
+        "alpha_price_pct": "Alpha price (τ/α)",
+        "alpha_emission_pct": "Alpha emission (τ/day)",
+        "root_emission_pct": "Root TAO in (τ/day)",
+        "burn_pct": "Incentive burn",
+        "reg_pct": "Reg cost (τ)",
+        "actual_reward_pct": "Actual reward (τ/day)",
+    }
+    return {
+        "metrics": [
+            {"key": k, "label": labels.get(k, k)} for k in ALERT_METRIC_KEYS
+        ],
+    }
 
 
 @app.get("/api/notifications/telegram/status")
@@ -383,6 +488,63 @@ def api_telegram_test(
         log.exception("telegram test send failed: %s", e)
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {"ok": True}
+
+
+@app.get("/api/notifications/discord/status")
+def api_discord_status() -> dict:
+    """Configured Discord webhook channels (from DISCORD_WEBHOOK_* env vars)."""
+    channels = list_discord_channels()
+    return {
+        "channels": [
+            {
+                "key": key,
+                "configured": bool(url),
+                "env_var": f"DISCORD_WEBHOOK_{key.upper()}",
+            }
+            for key, url in channels.items()
+        ],
+        "favorites_channel": FAVORITES_DISCORD_CHANNEL,
+        "favorites_configured": is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL),
+        "github_commit_configured": is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL),
+        "github_commit_channel": GITHUB_COMMIT_DISCORD_CHANNEL,
+        "interval_sec": favorites_notify_interval_sec(),
+    }
+
+
+@app.get("/api/notifications/github/status")
+def api_github_monitor_status() -> dict:
+    entries = load_favorites_config()
+    with_github = [e for e in entries if e.github_url]
+    return {
+        "configured": github_monitor_configured(),
+        "poll_interval_sec": github_poll_interval_sec(),
+        "discord_channel": GITHUB_COMMIT_DISCORD_CHANNEL,
+        "env_var": f"DISCORD_WEBHOOK_{GITHUB_COMMIT_DISCORD_CHANNEL.upper()}",
+        "monitored_count": len(with_github),
+        "monitored": [
+            {"netuid": e.netuid, "github_url": e.github_url} for e in with_github
+        ],
+    }
+
+
+@app.post("/api/notifications/discord/test")
+def api_discord_test(
+    body: DiscordTestBody = Body(default_factory=DiscordTestBody),
+) -> dict:
+    """Send a test message to a named Discord webhook channel."""
+    channel = (body.channel or FAVORITES_DISCORD_CHANNEL).strip().lower()
+    text = (body.text or "").strip() or (
+        "**bittensor-tools**: Discord webhook is wired up. "
+        "Favorite-subnet alerts will post here when thresholds are crossed."
+    )
+    try:
+        send_discord_message(channel, text, username="Bittensor tools")
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        log.exception("discord test send failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"ok": True, "channel": channel}
 
 
 if _SPA_ASSETS.is_dir():

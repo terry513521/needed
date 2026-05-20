@@ -14,13 +14,38 @@ export interface DashboardConfig {
   favorites_notify_interval_sec?: number;
   /** True when both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set. */
   telegram_configured?: boolean;
+  /** True when DISCORD_WEBHOOK_FAVORITES is set. */
+  discord_favorites_configured?: boolean;
+  /** True when DISCORD_WEBHOOK_GITHUB_COMMIT is set. */
+  discord_github_commit_configured?: boolean;
+  github_commit_poll_interval_sec?: number;
+  github_monitor_configured?: boolean;
+  /** True when Telegram and/or Discord favorites webhook is configured. */
+  favorites_alerts_configured?: boolean;
   bittensor_network_override: string | null;
   dashboard_host: string;
   dashboard_port: number;
 }
 
+/** Per-metric |Δ%| threshold; null/omitted = do not alert on that metric. */
+export interface FavoriteAlerts {
+  alpha_price_pct?: number | null;
+  alpha_emission_pct?: number | null;
+  root_emission_pct?: number | null;
+  burn_pct?: number | null;
+  reg_pct?: number | null;
+  actual_reward_pct?: number | null;
+}
+
+export interface FavoriteEntry {
+  netuid: number;
+  alerts: FavoriteAlerts;
+  github_url?: string | null;
+}
+
+/** API may return legacy ``number[]`` during migration. */
 export interface FavoritesResponse {
-  favorites: number[];
+  favorites: number[] | FavoriteEntry[];
 }
 
 export interface TelegramStatus {
@@ -28,6 +53,30 @@ export interface TelegramStatus {
   has_token: boolean;
   has_chat_id: boolean;
   interval_sec: number;
+}
+
+export interface DiscordChannelStatus {
+  key: string;
+  configured: boolean;
+  env_var: string;
+}
+
+export interface DiscordStatus {
+  channels: DiscordChannelStatus[];
+  favorites_channel: string;
+  favorites_configured: boolean;
+  github_commit_channel?: string;
+  github_commit_configured?: boolean;
+  interval_sec: number;
+}
+
+export interface GithubMonitorStatus {
+  configured: boolean;
+  poll_interval_sec: number;
+  discord_channel: string;
+  env_var: string;
+  monitored_count: number;
+  monitored: { netuid: number; github_url: string | null }[];
 }
 
 export interface SubnetOverviewRow {

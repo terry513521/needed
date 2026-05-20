@@ -413,6 +413,7 @@ button.fav-btn:focus-visible {
   outline-offset: 2px;
 }
 
+.notification-settings,
 .telegram-settings {
   padding: 0.75rem 0.85rem;
   background: rgba(0, 0, 0, 0.15);
@@ -421,10 +422,215 @@ button.fav-btn:focus-visible {
   margin-top: 0.25rem;
 }
 
-.telegram-settings p.msg {
-  margin: 0 0 0.65rem 0;
+.notification-settings > .msg.footer-hint,
+.notification-settings > .msg.warn {
+  margin-top: 0;
 }
 
-.telegram-settings .row {
+.notify-channel-block {
+  margin: 0.65rem 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.notify-channel-block:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0.35rem;
+}
+
+.notify-channel-title {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.notification-settings .row {
   margin-bottom: 0;
+}
+
+.compact-table-hint {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.favorites-compact-table {
+  min-width: 720px;
+  font-size: 0.78rem;
+}
+
+.favorites-compact-table th,
+.favorites-compact-table td {
+  padding: 0.3rem 0.35rem;
+  vertical-align: middle;
+}
+
+.favorites-compact-table thead th {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.favorites-compact-table tbody tr.fav-row-clickable {
+  cursor: pointer;
+}
+
+.favorites-compact-table tbody tr.fav-row-clickable:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.favorites-compact-table tbody tr.fav-row-expanded td {
+  background: rgba(61, 156, 245, 0.08);
+  border-bottom-color: transparent;
+}
+
+.favorites-compact-table .expand-col {
+  width: 2.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.favorites-compact-table .expand-ind {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.favorites-compact-table .trigger-badge {
+  display: inline-block;
+  margin-left: 0.2rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(230, 162, 60, 0.2);
+  color: var(--warn);
+}
+
+.favorites-compact-table tr.fav-alerts-detail-row td {
+  padding: 0.2rem 0.35rem;
+  background: rgba(61, 156, 245, 0.06);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.fav-alerts-lead-cell {
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.fav-alerts-lead {
+  font-weight: 500;
+}
+
+.fav-alert-cell {
+  text-align: center;
+}
+
+.fav-alert-cell-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.fav-alert-cell-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  line-height: 1.1;
+}
+
+.fav-alert-cell .alert-threshold-input {
+  width: 100%;
+  max-width: 4.5rem;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.fav-alert-actions-cell {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.fav-alert-actions-cell .btn-sm {
+  display: block;
+  margin: 0 auto 0.15rem;
+}
+
+.fav-alert-inline-warn {
+  display: block;
+  font-size: 0.62rem;
+  color: var(--warn);
+  line-height: 1.1;
+}
+
+.trigger-badge.github-badge {
+  background: rgba(88, 166, 255, 0.22);
+  color: #58a6ff;
+}
+
+.favorites-compact-table tr.fav-github-detail-row td {
+  padding: 0.35rem 0.5rem;
+  background: rgba(88, 166, 255, 0.05);
+  border-bottom: 1px solid var(--border);
+}
+
+.fav-github-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.fav-github-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fav-github-input {
+  flex: 1 1 14rem;
+  min-width: 10rem;
+  max-width: 28rem;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.fav-github-hint {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.favorites-compact-table .subnet-name-cell {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorites-compact-table .compact-num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.favorites-compact-table .compact-val {
+  display: block;
+}
+
+.favorites-compact-table .compact-delta {
+  display: block;
+  margin-left: 0;
+  font-size: 0.72em;
+  line-height: 1.2;
+}
+
+.alert-threshold-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }

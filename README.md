@@ -113,3 +113,5 @@ pm2 start uvicorn --name tool-backend \
 pm2 start npm --name "tool-frontend" -- run dev
 pm2 start npm --name "tool-frontend" -- run dev -- --host 0.0.0.0 --port 5731
 npm run dev -- --host 0.0.0.0 --port 5731
+
+pm2 start check_balance.py --interpreter python3 --name check-balance
