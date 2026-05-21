@@ -1,0 +1,7 @@
+# Copy to notifications.yaml (or set BITTENSOR_TOOLS_NOTIFICATIONS).
+# Toggle channels from the dashboard Notifications section without editing .env.
+
+channels:
+  telegram: true
+  discord_favorites: true
+  discord_github_commit: true

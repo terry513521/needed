@@ -25,6 +25,7 @@ import requests
 
 from dashboard.discord_notify import is_discord_channel_configured, send_discord_message
 from dashboard.favorites import FavoriteEntry, load_favorites_config
+from dashboard.notification_settings import CHANNEL_DISCORD_GITHUB_COMMIT, is_channel_enabled
 
 log = logging.getLogger(__name__)
 
@@ -206,9 +207,15 @@ def _check_entry(entry: FavoriteEntry, state: dict[str, Any]) -> list[str]:
     return [_format_commit_message(entry, owner, repo, commit)]
 
 
+def _github_commit_active() -> bool:
+    return is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL) and is_channel_enabled(
+        CHANNEL_DISCORD_GITHUB_COMMIT
+    )
+
+
 async def _tick() -> None:
-    if not is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL):
-        log.debug("github_monitor: DISCORD_WEBHOOK_GITHUB_COMMIT not set; skipping")
+    if not _github_commit_active():
+        log.debug("github_monitor: GitHub commit channel not active; skipping")
         return
 
     entries = [e for e in load_favorites_config() if e.github_url]
@@ -238,7 +245,7 @@ async def _tick() -> None:
 
 
 def github_monitor_configured() -> bool:
-    return is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL)
+    return _github_commit_active()
 
 
 async def run_github_monitor(*, startup_delay_sec: float = 20.0) -> None:

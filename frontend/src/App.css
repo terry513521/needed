@@ -446,6 +446,22 @@ button.fav-btn:focus-visible {
   color: var(--muted);
 }
 
+.notify-channel-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.5rem;
+}
+
+.channel-toggle.on {
+  border-color: rgba(230, 162, 60, 0.5);
+  color: var(--warn);
+}
+
+.channel-toggle.off {
+  border-color: rgba(63, 185, 80, 0.45);
+  color: #3fb950;
+}
+
 .notification-settings .row {
   margin-bottom: 0;
 }

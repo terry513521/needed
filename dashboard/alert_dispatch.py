@@ -9,6 +9,11 @@ from dashboard.discord_notify import (
     is_discord_channel_configured,
     send_discord_message,
 )
+from dashboard.notification_settings import (
+    CHANNEL_DISCORD_FAVORITES,
+    CHANNEL_TELEGRAM,
+    is_channel_enabled,
+)
 from dashboard.telegram_notify import is_telegram_configured, send_telegram_message
 
 log = logging.getLogger(__name__)
@@ -16,15 +21,25 @@ log = logging.getLogger(__name__)
 FAVORITES_DISCORD_CHANNEL = "favorites"
 
 
+def _telegram_active() -> bool:
+    return is_telegram_configured() and is_channel_enabled(CHANNEL_TELEGRAM)
+
+
+def _discord_favorites_active() -> bool:
+    return is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL) and is_channel_enabled(
+        CHANNEL_DISCORD_FAVORITES
+    )
+
+
 def favorites_alerts_configured() -> bool:
-    return is_telegram_configured() or is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL)
+    return _telegram_active() or _discord_favorites_active()
 
 
 async def send_favorites_alert(html_text: str) -> dict[str, bool]:
-    """Send the same alert payload to Telegram and/or Discord favorites channel."""
+    """Send the same alert payload to enabled Telegram and/or Discord favorites channels."""
     results: dict[str, bool] = {}
 
-    if is_telegram_configured():
+    if _telegram_active():
         try:
             await asyncio.to_thread(send_telegram_message, html_text)
             results["telegram"] = True
@@ -35,7 +50,7 @@ async def send_favorites_alert(html_text: str) -> dict[str, bool]:
     else:
         results["telegram"] = False
 
-    if is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL):
+    if _discord_favorites_active():
         try:
             await asyncio.to_thread(
                 send_discord_message,

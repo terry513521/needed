@@ -317,6 +317,7 @@ def build_subnet_overview(
         emission_tau_per_day = emission_tau_per_day_from_subnet_row(row)
         em_row = emission_by_uid.get(netuid)
         alpha_emission_tau_per_day: float | None = None
+        # print("----- debug price tao -----", price_tao)
         if em_row is not None and em_row.get("alpha_rewards") is not None:
             eff_price = price_tao
             if eff_price is None or not isinstance(eff_price, (int, float)) or eff_price <= 0:
@@ -326,6 +327,7 @@ def build_subnet_overview(
             #     _parse_int(em_row.get("alpha_rewards")), eff_price
             # )
         # Fraction of miner incentive burned to owner (0–1), per chain hyperparams
+        # print("----- debug emission tau -----", alpha_emission_tau_per_day)
         incentive_burn = _parse_float_str(row.get("incentive_burn"))
         raw_reg = row.get("neuron_registration_cost")
         if raw_reg is None:

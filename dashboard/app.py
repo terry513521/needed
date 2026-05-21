@@ -25,12 +25,12 @@ import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dashboard.env import REPO_ROOT, env_file_path, load_env, notification_env_summary
 
-# Load before dashboard imports so modules that read os.environ at import time see .env values.
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_REPO_ROOT / ".env")
-load_dotenv()
+# Ensure .env is loaded before other dashboard modules (also runs via dashboard/__init__.py).
+load_env()
+
+_REPO_ROOT = REPO_ROOT
 
 from dashboard.logging_config import configure_dashboard_logging
 
@@ -84,6 +84,15 @@ from dashboard.discord_notify import (
     is_discord_channel_configured,
     list_discord_channels,
     send_discord_message,
+)
+from dashboard.notification_settings import (
+    CHANNEL_DISCORD_FAVORITES,
+    CHANNEL_DISCORD_GITHUB_COMMIT,
+    CHANNEL_TELEGRAM,
+    is_channel_enabled,
+    notifications_yaml_path,
+    set_channel_enabled,
+    settings_api_payload,
 )
 from dashboard.telegram_notify import (
     is_telegram_configured,
@@ -160,6 +169,13 @@ class DiscordTestBody(BaseModel):
     text: str | None = Field(default=None, description="Optional message override.")
 
 
+class NotificationChannelBody(BaseModel):
+    channel: str = Field(
+        description="telegram | discord_favorites | discord_github_commit",
+    )
+    enabled: bool
+
+
 def _cors_origins() -> list[str]:
     raw = os.environ.get("DASHBOARD_CORS_ORIGINS", "").strip()
     if raw:
@@ -169,12 +185,17 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
+    # Reload .env on each process start (pm2 restart, uvicorn reload worker).
+    load_env(force=True)
     # After uvicorn configures logging (disables pre-import loggers), wire our handlers.
     configure_dashboard_logging()
-    logging.getLogger(__name__).info(
-        "logging ready (DASHBOARD_LOG_LEVEL=%s)",
+    log = logging.getLogger(__name__)
+    log.info(
+        "logging ready (DASHBOARD_LOG_LEVEL=%s, env_file=%s)",
         os.environ.get("DASHBOARD_LOG_LEVEL", "INFO").strip() or "INFO",
+        env_file_path(),
     )
+    log.info("notification env: %s", notification_env_summary())
     notifier_task = asyncio.create_task(
         run_favorites_notifier(),
         name="favorites_notifier",
@@ -254,6 +275,8 @@ def api_config() -> dict:
         or str(HOTKEYS_DEFAULT_PATH),
         "favorites_config_path": str(favorites_yaml_path()),
         "favorites_default_path": str(FAVORITES_DEFAULT_PATH),
+        "notifications_config_path": str(notifications_yaml_path()),
+        "env_file_path": env_file_path(),
         "favorites_notify_interval_sec": favorites_notify_interval_sec(),
         "telegram_configured": is_telegram_configured(),
         "discord_favorites_configured": is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL),
@@ -459,12 +482,36 @@ def api_favorites_alert_metrics() -> dict:
     }
 
 
+@app.get("/api/notifications/settings")
+def api_notification_settings() -> dict:
+    """Per-channel configured / enabled / active flags (persisted in notifications.yaml)."""
+    return settings_api_payload()
+
+
+@app.post("/api/notifications/channel")
+def api_notification_channel(body: NotificationChannelBody) -> dict:
+    """Enable or disable a notification channel without removing .env credentials."""
+    try:
+        set_channel_enabled(body.channel, body.enabled)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        log.exception("notification settings write failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Could not write settings: {e}") from e
+    log.info("notification channel %s enabled=%s", body.channel, body.enabled)
+    return settings_api_payload()
+
+
 @app.get("/api/notifications/telegram/status")
 def api_telegram_status() -> dict:
     """Whether Telegram credentials are present and the digest cadence."""
     token, chat_id = telegram_settings()
+    configured = bool(token and chat_id)
+    enabled = is_channel_enabled(CHANNEL_TELEGRAM)
     return {
-        "configured": bool(token and chat_id),
+        "configured": configured,
+        "enabled": enabled,
+        "active": configured and enabled,
         "has_token": bool(token),
         "has_chat_id": bool(chat_id),
         "interval_sec": favorites_notify_interval_sec(),
@@ -505,7 +552,13 @@ def api_discord_status() -> dict:
         ],
         "favorites_channel": FAVORITES_DISCORD_CHANNEL,
         "favorites_configured": is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL),
+        "favorites_enabled": is_channel_enabled(CHANNEL_DISCORD_FAVORITES),
+        "favorites_active": is_discord_channel_configured(FAVORITES_DISCORD_CHANNEL)
+        and is_channel_enabled(CHANNEL_DISCORD_FAVORITES),
         "github_commit_configured": is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL),
+        "github_commit_enabled": is_channel_enabled(CHANNEL_DISCORD_GITHUB_COMMIT),
+        "github_commit_active": is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL)
+        and is_channel_enabled(CHANNEL_DISCORD_GITHUB_COMMIT),
         "github_commit_channel": GITHUB_COMMIT_DISCORD_CHANNEL,
         "interval_sec": favorites_notify_interval_sec(),
     }
@@ -515,8 +568,12 @@ def api_discord_status() -> dict:
 def api_github_monitor_status() -> dict:
     entries = load_favorites_config()
     with_github = [e for e in entries if e.github_url]
+    webhook_ok = is_discord_channel_configured(GITHUB_COMMIT_DISCORD_CHANNEL)
+    gh_enabled = is_channel_enabled(CHANNEL_DISCORD_GITHUB_COMMIT)
     return {
-        "configured": github_monitor_configured(),
+        "configured": webhook_ok,
+        "enabled": gh_enabled,
+        "active": github_monitor_configured(),
         "poll_interval_sec": github_poll_interval_sec(),
         "discord_channel": GITHUB_COMMIT_DISCORD_CHANNEL,
         "env_var": f"DISCORD_WEBHOOK_{GITHUB_COMMIT_DISCORD_CHANNEL.upper()}",

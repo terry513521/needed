@@ -22,6 +22,8 @@ export interface DashboardConfig {
   github_monitor_configured?: boolean;
   /** True when Telegram and/or Discord favorites webhook is configured. */
   favorites_alerts_configured?: boolean;
+  /** Resolved path to repo ``.env`` loaded at startup. */
+  env_file_path?: string;
   bittensor_network_override: string | null;
   dashboard_host: string;
   dashboard_port: number;
@@ -48,8 +50,23 @@ export interface FavoritesResponse {
   favorites: number[] | FavoriteEntry[];
 }
 
+export interface NotificationChannelSetting {
+  id: string;
+  label: string;
+  configured: boolean;
+  enabled: boolean;
+  active: boolean;
+}
+
+export interface NotificationSettingsResponse {
+  config_path: string;
+  channels: NotificationChannelSetting[];
+}
+
 export interface TelegramStatus {
   configured: boolean;
+  enabled?: boolean;
+  active?: boolean;
   has_token: boolean;
   has_chat_id: boolean;
   interval_sec: number;
@@ -65,13 +82,19 @@ export interface DiscordStatus {
   channels: DiscordChannelStatus[];
   favorites_channel: string;
   favorites_configured: boolean;
+  favorites_enabled?: boolean;
+  favorites_active?: boolean;
   github_commit_channel?: string;
   github_commit_configured?: boolean;
+  github_commit_enabled?: boolean;
+  github_commit_active?: boolean;
   interval_sec: number;
 }
 
 export interface GithubMonitorStatus {
   configured: boolean;
+  enabled?: boolean;
+  active?: boolean;
   poll_interval_sec: number;
   discord_channel: string;
   env_var: string;

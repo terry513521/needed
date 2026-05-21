@@ -1,8 +1,10 @@
 favorites:
 - netuid: 44
-  alerts: {}
+  alerts:
+    burn_pct: 20.0
 - netuid: 46
-  alerts: {}
+  alerts:
+    burn_pct: 10.0
 - netuid: 66
   alerts: {}
 - netuid: 68
@@ -10,7 +12,12 @@ favorites:
 - netuid: 78
   alerts:
     burn_pct: 3.0
+  github_url: https://github.com/vocence-78/vocence
 - netuid: 102
-  alerts: {}
+  alerts:
+    burn_pct: 10.0
 - netuid: 120
-  alerts: {}
+  alerts:
+    burn_pct: 10.0
+    actual_reward_pct: 10.0
+  github_url: https://github.com/AffineFoundation/affine-cortex

@@ -13,6 +13,8 @@ import type {
   FavoriteAlerts,
   FavoriteEntry,
   GithubMonitorStatus,
+  NotificationChannelSetting,
+  NotificationSettingsResponse,
   FavoritesResponse,
   HotkeysCheckResponse,
   HotkeysConfigResponse,
@@ -1708,11 +1710,49 @@ function FavoriteSubnetsList({
   );
 }
 
+const NOTIFY_CHANNEL_TELEGRAM = "telegram";
+const NOTIFY_CHANNEL_DISCORD_FAVORITES = "discord_favorites";
+const NOTIFY_CHANNEL_DISCORD_GITHUB = "discord_github_commit";
+
+function buildChannelSettings(
+  settings: NotificationSettingsResponse | null,
+  tg: TelegramStatus | null,
+  dc: DiscordStatus | null,
+  gh: GithubMonitorStatus | null,
+): NotificationChannelSetting[] {
+  if (settings?.channels?.length) return settings.channels;
+  return [
+    {
+      id: NOTIFY_CHANNEL_TELEGRAM,
+      label: "Telegram",
+      configured: Boolean(tg?.configured),
+      enabled: tg?.enabled ?? true,
+      active: tg?.active ?? Boolean(tg?.configured),
+    },
+    {
+      id: NOTIFY_CHANNEL_DISCORD_FAVORITES,
+      label: "Discord · favorites",
+      configured: Boolean(dc?.favorites_configured),
+      enabled: dc?.favorites_enabled ?? true,
+      active: dc?.favorites_active ?? Boolean(dc?.favorites_configured),
+    },
+    {
+      id: NOTIFY_CHANNEL_DISCORD_GITHUB,
+      label: "Discord · GitHub commits",
+      configured: Boolean(gh?.configured),
+      enabled: gh?.enabled ?? true,
+      active: gh?.active ?? Boolean(gh?.configured),
+    },
+  ];
+}
+
 function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: number }) {
+  const [channelSettings, setChannelSettings] = useState<NotificationChannelSetting[]>([]);
   const [tgStatus, setTgStatus] = useState<TelegramStatus | null>(null);
   const [dcStatus, setDcStatus] = useState<DiscordStatus | null>(null);
   const [ghStatus, setGhStatus] = useState<GithubMonitorStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
   const [tgTesting, setTgTesting] = useState(false);
   const [dcTesting, setDcTesting] = useState(false);
   const [ghTesting, setGhTesting] = useState(false);
@@ -1723,21 +1763,79 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
   const [dcTestIsError, setDcTestIsError] = useState(false);
   const [ghTestIsError, setGhTestIsError] = useState(false);
 
+  const channelById = useCallback(
+    (id: string) => channelSettings.find((c) => c.id === id),
+    [channelSettings],
+  );
+
   const refreshStatus = useCallback(async () => {
-    try {
-      const [tg, dc, gh] = await Promise.all([
-        fetchJson<TelegramStatus>("/api/notifications/telegram/status"),
-        fetchJson<DiscordStatus>("/api/notifications/discord/status"),
-        fetchJson<GithubMonitorStatus>("/api/notifications/github/status"),
-      ]);
-      setTgStatus(tg);
-      setDcStatus(dc);
-      setGhStatus(gh);
+    const results = await Promise.allSettled([
+      fetchJson<NotificationSettingsResponse>("/api/notifications/settings"),
+      fetchJson<TelegramStatus>("/api/notifications/telegram/status"),
+      fetchJson<DiscordStatus>("/api/notifications/discord/status"),
+      fetchJson<GithubMonitorStatus>("/api/notifications/github/status"),
+    ]);
+
+    const settings =
+      results[0].status === "fulfilled" ? results[0].value : null;
+    const tg = results[1].status === "fulfilled" ? results[1].value : null;
+    const dc = results[2].status === "fulfilled" ? results[2].value : null;
+    const gh = results[3].status === "fulfilled" ? results[3].value : null;
+
+    if (tg) setTgStatus(tg);
+    if (dc) setDcStatus(dc);
+    if (gh) setGhStatus(gh);
+    setChannelSettings(buildChannelSettings(settings, tg, dc, gh));
+
+    const failed: string[] = [];
+    if (results[0].status === "rejected") failed.push("settings");
+    if (results[1].status === "rejected") failed.push("telegram");
+    if (results[2].status === "rejected") failed.push("discord");
+    if (results[3].status === "rejected") failed.push("github");
+
+    if (!tg && !dc && !gh) {
+      const first = results.find((r) => r.status === "rejected");
+      setLoadError(
+        first && first.status === "rejected"
+          ? first.reason instanceof Error
+            ? first.reason.message
+            : String(first.reason)
+          : "Could not reach notification API",
+      );
+    } else if (failed.length > 0) {
       setLoadError(null);
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e));
+    } else {
+      setLoadError(null);
     }
   }, []);
+
+  const toggleChannel = useCallback(
+    async (channelId: string, enabled: boolean) => {
+      setTogglingChannel(channelId);
+      try {
+        const resp = await fetchJson<NotificationSettingsResponse>(
+          "/api/notifications/channel",
+          {
+            method: "POST",
+            body: JSON.stringify({ channel: channelId, enabled }),
+          },
+        );
+        setChannelSettings(resp.channels);
+        setLoadError(null);
+        const tg = await fetchJson<TelegramStatus>("/api/notifications/telegram/status");
+        const dc = await fetchJson<DiscordStatus>("/api/notifications/discord/status");
+        const gh = await fetchJson<GithubMonitorStatus>("/api/notifications/github/status");
+        setTgStatus(tg);
+        setDcStatus(dc);
+        setGhStatus(gh);
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setTogglingChannel(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     refreshStatus();
@@ -1815,23 +1913,53 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
       ? Math.max(1, Math.round(ghStatus.poll_interval_sec / 60))
       : null;
 
-  const anyChannel = Boolean(
-    tgStatus?.configured ||
-      dcStatus?.favorites_configured ||
-      dcStatus?.github_commit_configured,
-  );
+  const anyActive = channelSettings.some((c) => c.active);
+  const anyConfigured = channelSettings.some((c) => c.configured);
+
+  const tgCh = channelById(NOTIFY_CHANNEL_TELEGRAM);
+  const dcFavCh = channelById(NOTIFY_CHANNEL_DISCORD_FAVORITES);
+  const dcGhCh = channelById(NOTIFY_CHANNEL_DISCORD_GITHUB);
+
+  const renderChannelToggle = (ch: NotificationChannelSetting | undefined) => {
+    if (!ch?.configured) return null;
+    return (
+      <button
+        type="button"
+        className={ch.enabled ? "btn-sm channel-toggle on" : "btn-sm channel-toggle off"}
+        disabled={togglingChannel === ch.id}
+        onClick={() => toggleChannel(ch.id, !ch.enabled)}
+        title={ch.enabled ? "Stop sending alerts on this channel" : "Resume alerts on this channel"}
+      >
+        {togglingChannel === ch.id ? "…" : ch.enabled ? "Disable" : "Enable"}
+      </button>
+    );
+  };
+
+  const renderActiveBadge = (ch: NotificationChannelSetting | undefined) => {
+    if (!ch?.configured) return null;
+    if (ch.active) {
+      return <span className="badge ok">alerts on</span>;
+    }
+    return <span className="badge bad">disabled</span>;
+  };
 
   return (
     <div className="notification-settings">
       <p className="msg footer-hint">
         Polls every {intervalMin ?? "—"} min; sends when a favorite crosses its |Δ%| threshold.{" "}
-        {favoriteCount === 1 ? "1 favorite" : `${favoriteCount} favorites`} monitored.
+        {favoriteCount === 1 ? "1 favorite" : `${favoriteCount} favorites`} monitored. Use Enable /
+        Disable per channel without removing <code>.env</code> credentials (saved in{" "}
+        <code>notifications.yaml</code>).
       </p>
       {loadError ? <p className="msg warn">Could not load notification status: {loadError}</p> : null}
-      {!anyChannel && tgStatus && dcStatus ? (
+      {!anyConfigured && channelSettings.length > 0 ? (
         <p className="msg warn">
-          No notification channel configured. Set Telegram and/or{" "}
-          <code>DISCORD_WEBHOOK_FAVORITES</code> in <code>.env</code> and restart the dashboard.
+          No notification channel configured. Set Telegram and/or Discord webhooks in{" "}
+          <code>.env</code> and restart the dashboard.
+        </p>
+      ) : anyConfigured && !anyActive ? (
+        <p className="msg warn">
+          All configured channels are disabled. Enable at least one channel below to receive alerts.
         </p>
       ) : null}
 
@@ -1841,7 +1969,7 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
           <p className="msg">Checking…</p>
         ) : tgStatus?.configured ? (
           <p className="msg">
-            <span className="badge ok">configured</span>
+            <span className="badge ok">configured</span> {renderActiveBadge(tgCh)}
           </p>
         ) : (
           <p className="msg warn">
@@ -1849,7 +1977,8 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
             <code>TELEGRAM_BOT_TOKEN</code> + <code>TELEGRAM_CHAT_ID</code>
           </p>
         )}
-        <div className="row">
+        <div className="row notify-channel-actions">
+          {renderChannelToggle(tgCh)}
           <button
             type="button"
             className="btn-sm"
@@ -1870,7 +1999,7 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
           <p className="msg">Checking…</p>
         ) : dcStatus?.favorites_configured ? (
           <p className="msg">
-            <span className="badge ok">configured</span>{" "}
+            <span className="badge ok">configured</span> {renderActiveBadge(dcFavCh)}{" "}
             <code>DISCORD_WEBHOOK_FAVORITES</code>
           </p>
         ) : (
@@ -1879,7 +2008,8 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
             <code>DISCORD_WEBHOOK_FAVORITES</code> in <code>.env</code>
           </p>
         )}
-        <div className="row">
+        <div className="row notify-channel-actions">
+          {renderChannelToggle(dcFavCh)}
           <button
             type="button"
             className="btn-sm"
@@ -1909,7 +2039,7 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
           <p className="msg">Checking…</p>
         ) : ghStatus?.configured ? (
           <p className="msg">
-            <span className="badge ok">configured</span>{" "}
+            <span className="badge ok">configured</span> {renderActiveBadge(dcGhCh)}{" "}
             <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code>
             {ghStatus.monitored_count > 0 ? (
               <>
@@ -1927,7 +2057,8 @@ function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: numbe
             <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code> in <code>.env</code>
           </p>
         )}
-        <div className="row">
+        <div className="row notify-channel-actions">
+          {renderChannelToggle(dcGhCh)}
           <button
             type="button"
             className="btn-sm"
