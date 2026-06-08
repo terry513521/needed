@@ -249,6 +249,29 @@ def root():
     }
 
 
+def _frontend_file_response(*names: str) -> FileResponse | None:
+    for name in names:
+        path = _SPA_DIST / name
+        if path.is_file():
+            return FileResponse(path)
+    return None
+
+
+@app.get("/favicon.png")
+def favicon_svg():
+    response = _frontend_file_response("favicon.png")
+    if response is None:
+        raise HTTPException(status_code=404, detail="favicon.png not found")
+    return response
+
+@app.get("/src/assets/{asset_name}")
+def legacy_src_asset(asset_name: str):
+    response = _frontend_file_response(asset_name, "team.png", "favicon.svg")
+    if response is None:
+        raise HTTPException(status_code=404, detail=f"{asset_name} not found")
+    return response
+
+
 @app.get("/api/config")
 def api_config() -> dict:
     """Effective optional settings (from environment / `.env`). No secrets."""

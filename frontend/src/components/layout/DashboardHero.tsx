@@ -28,11 +28,8 @@ export function DashboardHero({
       <header className="dashboard-hero">
         <img
           className="hero-team-avatar"
-          src="/src/assets/team.png"
+          src="/favicon.png"
           alt="GRIT team avatar"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-          }}
         />
         <div className="hero-copy">
           <span className="eyebrow">Bittensor intelligence hub</span>
