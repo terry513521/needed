@@ -45,7 +45,7 @@ async def main():
 asyncio.run(main())
 ```
 
-## Taostats + hotkey dashboard
+## Taostats + alarms dashboard
 
 The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **FastAPI** backend (`dashboard/app.py`) over HTTP (`/api/...`). That split keeps chain and Taostats logic on the server while the browser only renders state and issues actions—easy to extend, type-check, and test.
 
@@ -53,7 +53,7 @@ The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **F
 
 - **Node.js** (for the frontend) and **Python** venv with this repo’s dependencies.
 - Taostats API key: `TAOSTATS_API_KEY` (see [Taostats API docs](https://docs.taostats.io/reference)). Use `.env` at the repo root (see `.env.example`); `python-dotenv` loads it when the backend starts.
-- For hotkeys: copy `hotkeys.example.yaml` to `hotkeys.yaml` and list `netuid`, `ss58`, and optional `name`.
+- The Alarms tab pulls today and yesterday's posts from [TAO Daily](https://taodaily.io/).
 
 **Optional environment variables** (backend / `.env`):
 
@@ -64,8 +64,9 @@ The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **F
 | `TAOSTATS_MIN_DIVERGENCE_PCT` | 24h divergence alert threshold in percentage points (default `2`) |
 | `TAOSTATS_LOOKBACK_SEC` / `TAOSTATS_LOOKBACK_TOLERANCE_SEC` | Baseline age and match tolerance (defaults `86400` / `7200`) |
 | `TAOSTATS_REQUEST_TIMEOUT` | HTTP timeout seconds for Taostats (default `60`) |
-| `BITTENSOR_TOOLS_HOTKEYS` | Path to `hotkeys.yaml` if not at repo root |
-| `BITTENSOR_NETWORK` | Overrides `network` in `hotkeys.yaml` (e.g. `finney`) |
+| `TAODAILY_API_URL` | TAO Daily base URL for the Alarms tab (default `https://taodaily.io`) |
+| `TAODAILY_REQUEST_TIMEOUT` | HTTP timeout seconds for TAO Daily requests (default `20`) |
+| `TAODAILY_POST_LIMIT` | Max recent TAO Daily posts to inspect before filtering today/yesterday (default `30`) |
 | `DASHBOARD_HOST` / `DASHBOARD_PORT` | Bind address for the API (default `127.0.0.1` / `8765`) |
 | `DASHBOARD_CORS_ORIGINS` | Comma-separated origins for browser access to the API (defaults include `http://127.0.0.1:5173` for Vite) |
 

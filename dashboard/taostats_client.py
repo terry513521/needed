@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import copy
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +20,10 @@ TAOSTATS_BASE = os.environ.get("TAOSTATS_API_URL", "https://api.taostats.io").rs
 SUBNET_LATEST = f"{TAOSTATS_BASE}/api/subnet/latest/v1"
 POOL_LATEST = f"{TAOSTATS_BASE}/api/dtao/pool/latest/v1"
 SUBNET_EMISSION = f"{TAOSTATS_BASE}/api/dtao/subnet_emission/v1"
+SUBNET_IDENTITY = f"{TAOSTATS_BASE}/api/subnet/identity/v1"
+OVERVIEW_CACHE_TTL_SEC = int(os.environ.get("TAOSTATS_OVERVIEW_CACHE_TTL_SEC", "600"))
+OVERVIEW_STALE_TTL_SEC = int(os.environ.get("TAOSTATS_OVERVIEW_STALE_TTL_SEC", "86400"))
+IDENTITY_CACHE_TTL_SEC = int(os.environ.get("TAOSTATS_IDENTITY_CACHE_TTL_SEC", "86400"))
 
 # ~12s blocks → 7200 blocks/day on Finney (override if your network differs)
 BLOCKS_PER_DAY = int(os.environ.get("TAOSTATS_BLOCKS_PER_DAY", "7200"))
@@ -40,6 +46,11 @@ SUBNET_EMISSION_PAGE_LIMIT = max(1, min(200, _raw_emission_lim))
 SUBNET_EMISSION_MAX_REQUESTS = max(1, int(os.environ.get("TAOSTATS_SUBNET_EMISSION_MAX_REQUESTS", "5")))
 _raw_subnet_latest_lim = int(os.environ.get("TAOSTATS_SUBNET_LATEST_LIMIT", "1024"))
 SUBNET_LATEST_PAGE_LIMIT = max(1, min(1024, _raw_subnet_latest_lim))
+
+_overview_cache_lock = threading.Lock()
+_overview_cache: dict[str, Any] | None = None
+_identity_cache_lock = threading.Lock()
+_identity_cache: dict[str, Any] | None = None
 
 
 @dataclass
@@ -141,6 +152,58 @@ def fetch_latest_pools(api_key: str, timeout: float | None = None) -> list[dict[
         page = int(next_page)
     log.info("pool/latest done: %s pool rows", len(out))
     return out
+
+
+def fetch_subnet_identities(api_key: str, timeout: float | None = None) -> dict[int, dict[str, Any]]:
+    """Subnet identity metadata such as GitHub repo, website URL, and logo URL."""
+    if timeout is None:
+        timeout = REQUEST_TIMEOUT
+    headers = _auth_headers(api_key)
+    out: dict[int, dict[str, Any]] = {}
+    page = 1
+    for _ in range(50):
+        r = requests.get(
+            SUBNET_IDENTITY,
+            headers=headers,
+            params={"page": page, "limit": 1024, "order": "net_uid_asc"},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        body = r.json()
+        data = body.get("data") or []
+        for row in data:
+            uid = row.get("netuid")
+            if uid is None:
+                continue
+            out[int(uid)] = row
+        log.debug("subnet/identity page=%s rows=%s total_so_far=%s", page, len(data), len(out))
+        pag = body.get("pagination") or {}
+        next_page = pag.get("next_page")
+        if not next_page:
+            break
+        page = int(next_page)
+    log.info("subnet/identity done: %s identity rows", len(out))
+    return out
+
+
+def fetch_subnet_identities_cached(api_key: str, timeout: float | None = None) -> dict[int, dict[str, Any]]:
+    """Return cached identity metadata when possible to avoid Taostats rate limits."""
+    global _identity_cache
+    now = time.time()
+    with _identity_cache_lock:
+        if _identity_cache and now - float(_identity_cache["fetched_at"]) < IDENTITY_CACHE_TTL_SEC:
+            return copy.deepcopy(_identity_cache["data"])
+    try:
+        data = fetch_subnet_identities(api_key, timeout=timeout)
+    except Exception as e:  # noqa: BLE001
+        with _identity_cache_lock:
+            if _identity_cache:
+                log.warning("subnet/identity failed; using stale cached identities: %s", e)
+                return copy.deepcopy(_identity_cache["data"])
+        raise
+    with _identity_cache_lock:
+        _identity_cache = {"fetched_at": now, "data": data}
+    return copy.deepcopy(data)
 
 
 def _parse_float_str(s: Any) -> float | None:
@@ -291,14 +354,16 @@ def build_subnet_overview(
     subnet_rows: list[dict[str, Any]],
     pool_rows: list[dict[str, Any]],
     subnet_emission_by_uid: dict[int, dict[str, Any]] | None = None,
+    identities_by_uid: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Merge subnet/latest + pool/latest (+ optional subnet_emission) by netuid."""
+    """Merge subnet/latest + pool/latest (+ optional subnet_emission/identity) by netuid."""
     pools_by_uid: dict[int, dict[str, Any]] = {}
     for row in pool_rows:
         uid = row.get("netuid")
         if uid is not None:
             pools_by_uid[int(uid)] = row
     emission_by_uid = subnet_emission_by_uid or {}
+    identity_by_uid = identities_by_uid or {}
 
     merged: list[dict[str, Any]] = []
     for row in subnet_rows:
@@ -314,27 +379,31 @@ def build_subnet_overview(
             name = pool.get("name")
             symbol = pool.get("symbol")
             price_tao = _parse_float_str(pool.get("price"))
+        identity = identity_by_uid.get(netuid) or {}
+        identity_name = identity.get("subnet_name")
         emission_tau_per_day = emission_tau_per_day_from_subnet_row(row)
         em_row = emission_by_uid.get(netuid)
         alpha_emission_tau_per_day: float | None = None
-        # print("----- debug price tao -----", price_tao)
         if em_row is not None and em_row.get("alpha_rewards") is not None:
             eff_price = price_tao
             if eff_price is None or not isinstance(eff_price, (int, float)) or eff_price <= 0:
                 eff_price = _price_tau_per_alpha_from_emission_row(em_row)
-        alpha_emission_tau_per_day = price_tao * 7200
-            # alpha_emission_tau_per_day = compute_alpha_emission_tau_per_day(
-            #     _parse_int(em_row.get("alpha_rewards")), eff_price
-            # )
+            alpha_emission_tau_per_day = compute_alpha_emission_tau_per_day(
+                _parse_int(em_row.get("alpha_rewards")),
+                eff_price,
+            )
+        elif price_tao is not None and isinstance(price_tao, (int, float)) and price_tao > 0:
+            alpha_emission_tau_per_day = float(price_tao) * float(BLOCKS_PER_DAY)
         # Fraction of miner incentive burned to owner (0–1), per chain hyperparams
-        # print("----- debug emission tau -----", alpha_emission_tau_per_day)
         incentive_burn = _parse_float_str(row.get("incentive_burn"))
         raw_reg = row.get("neuron_registration_cost")
         if raw_reg is None:
             neuron_registration_cost_tao: float | None = None
         else:
             neuron_registration_cost_tao = _parse_int(raw_reg) / 1e9
-        if name and symbol and str(symbol) != str(name):
+        if identity_name:
+            label = str(identity_name)
+        elif name and symbol and str(symbol) != str(name):
             label = f"{name} ({symbol})"
         elif name:
             label = str(name)
@@ -352,6 +421,9 @@ def build_subnet_overview(
                 "alpha_emission_tau_per_day": alpha_emission_tau_per_day,
                 "neuron_registration_cost_tao": neuron_registration_cost_tao,
                 "incentive_burn_rate": incentive_burn,
+                "github_repo": identity.get("github_repo") or None,
+                "logo_url": identity.get("logo_url") or None,
+                "subnet_url": identity.get("subnet_url") or None,
             }
         )
     merged.sort(key=lambda x: x["netuid"])
@@ -365,7 +437,7 @@ def _fetch_and_build_overview(api_key: str) -> tuple[list[dict[str, Any]], list[
     """
     Shared Taostats pull: raw subnet/latest rows + merged overview rows (same as dashboard table).
     """
-    log.info("taostats overview: fetching subnet/latest + pool + subnet_emission")
+    log.info("taostats overview: fetching subnet/latest + pool + subnet_emission + identity")
     subnets = fetch_latest_subnets(api_key)
     pool_warning: str | None = None
     emission_warning: str | None = None
@@ -376,37 +448,162 @@ def _fetch_and_build_overview(api_key: str) -> tuple[list[dict[str, Any]], list[
         pool_warning = f"Pool API error (alpha price unavailable): {e}"
         log.warning("%s", pool_warning)
     subnet_emission_by_uid: dict[int, dict[str, Any]] = {}
+    identities_by_uid: dict[int, dict[str, Any]] = {}
     try:
         subnet_emission_by_uid = fetch_subnet_emission_bulk(api_key, subnet_rows=subnets)
     except Exception as e:  # noqa: BLE001
         emission_warning = f"Subnet emission API error (alpha emission τ/day unavailable): {e}"
         log.warning("%s", emission_warning)
-    rows, merge_warn = build_subnet_overview(subnets, pools, subnet_emission_by_uid)
-    warnings = [w for w in (pool_warning, emission_warning, merge_warn) if w]
+    identity_warning: str | None = None
+    try:
+        identities_by_uid = fetch_subnet_identities_cached(api_key)
+    except Exception as e:  # noqa: BLE001
+        # Identity links are optional UI enrichment. Do not surface this as a table error,
+        # especially when Taostats is rate-limiting optional metadata.
+        identity_warning = None
+        log.warning("Subnet identity API unavailable; continuing without identity links: %s", e)
+    rows, merge_warn = build_subnet_overview(subnets, pools, subnet_emission_by_uid, identities_by_uid)
+    warnings = [w for w in (pool_warning, emission_warning, identity_warning, merge_warn) if w]
     if merge_warn:
         log.warning("%s", merge_warn)
     log.info(
-        "taostats overview: merged %s subnets (emission rows=%s)",
+        "taostats overview: merged %s subnets (emission rows=%s identity rows=%s)",
         len(rows),
         len(subnet_emission_by_uid),
+        len(identities_by_uid),
     )
     return subnets, rows, " ".join(warnings) if warnings else None
 
 
-def fetch_subnet_overview(api_key: str) -> dict[str, Any]:
-    """
-    Latest subnets + pool prices + subnet alpha emission; does not write snapshot files.
-
-    Uses large page sizes (subnet/latest up to 1024, pool/emission 200) to minimize HTTP calls
-    for Taostats rate limits (~5 responses/minute typical).
-    """
-    _subnets, rows, warn = _fetch_and_build_overview(api_key)
+def _overview_payload(rows: list[dict[str, Any]], warn: str | None) -> dict[str, Any]:
     return {
         "fetched_at": int(time.time()),
         "subnets": rows,
         "pool_warning": warn,
         "blocks_per_day": BLOCKS_PER_DAY,
     }
+
+
+def _set_overview_cache(payload: dict[str, Any]) -> None:
+    global _overview_cache
+    with _overview_cache_lock:
+        _overview_cache = {
+            "cached_at": time.time(),
+            "payload": copy.deepcopy(payload),
+        }
+
+
+def _cached_overview_payload(*, max_age_sec: int) -> dict[str, Any] | None:
+    with _overview_cache_lock:
+        if not _overview_cache:
+            return None
+        age = time.time() - float(_overview_cache["cached_at"])
+        if age > max_age_sec:
+            return None
+        payload = copy.deepcopy(_overview_cache["payload"])
+    payload["cache_hit"] = True
+    payload["cache_age_sec"] = int(age)
+    return payload
+
+
+def overview_from_snapshot_file(path: Path | None = None) -> dict[str, Any]:
+    """Build an overview table from the latest saved snapshot without calling Taostats."""
+    snapshot_path = path or DEFAULT_SNAPSHOT_PATH
+    snapshots = load_snapshots(snapshot_path)
+    if not snapshots:
+        raise ValueError(f"No Taostats snapshots found at {snapshot_path}")
+    last = snapshots[-1]
+    subnets_obj = last.get("subnets") or {}
+    if not isinstance(subnets_obj, dict):
+        raise ValueError("Latest Taostats snapshot has no subnet map.")
+    rows: list[dict[str, Any]] = []
+    blocks_per_day = int(last.get("blocks_per_day") or BLOCKS_PER_DAY)
+    for key, rec in subnets_obj.items():
+        if not isinstance(rec, dict):
+            continue
+        try:
+            netuid = int(key)
+        except (TypeError, ValueError):
+            continue
+        overview = rec.get("overview")
+        if isinstance(overview, dict):
+            row = copy.deepcopy(overview)
+            row["netuid"] = netuid
+        else:
+            row = {
+                "netuid": netuid,
+                "name": f"Subnet {netuid}",
+                "alpha_price_tao": None,
+                "emission_tau_per_day": _parse_int(rec.get("e")) * blocks_per_day / 1e9,
+                "alpha_emission_tau_per_day": None,
+                "neuron_registration_cost_tao": _parse_int(rec.get("b")) / 1e9,
+                "incentive_burn_rate": None,
+                "github_repo": None,
+                "logo_url": None,
+                "subnet_url": None,
+            }
+        rows.append(row)
+    rows.sort(key=lambda x: int(x["netuid"]))
+    return {
+        "fetched_at": int(last.get("t") or time.time()),
+        "subnets": rows,
+        "pool_warning": None,
+        "blocks_per_day": blocks_per_day,
+        "from_snapshot_file": True,
+    }
+
+
+def fetch_subnet_overview(api_key: str, *, refresh: bool = False) -> dict[str, Any]:
+    """
+    Latest subnets + pool prices + subnet alpha emission; does not write snapshot files.
+
+    Uses large page sizes (subnet/latest up to 1024, pool/emission 200) to minimize HTTP calls
+    for Taostats rate limits (~5 responses/minute typical).
+    """
+    global _overview_cache
+    if not refresh:
+        cached = _cached_overview_payload(max_age_sec=OVERVIEW_CACHE_TTL_SEC)
+        if cached is not None:
+            log.info("taostats overview: served from cache age=%ss", cached.get("cache_age_sec"))
+            return cached
+
+    with _overview_cache_lock:
+        if not refresh and _overview_cache:
+            age = time.time() - float(_overview_cache["cached_at"])
+            if age <= OVERVIEW_CACHE_TTL_SEC:
+                payload = copy.deepcopy(_overview_cache["payload"])
+                payload["cache_hit"] = True
+                payload["cache_age_sec"] = int(age)
+                log.info("taostats overview: served from cache after lock age=%ss", int(age))
+                return payload
+        try:
+            _subnets, rows, warn = _fetch_and_build_overview(api_key)
+            payload = _overview_payload(rows, warn)
+            _overview_cache = {
+                "cached_at": time.time(),
+                "payload": copy.deepcopy(payload),
+            }
+            return payload
+        except Exception as e:  # noqa: BLE001
+            if _overview_cache:
+                age = time.time() - float(_overview_cache["cached_at"])
+                if age <= OVERVIEW_STALE_TTL_SEC:
+                    payload = copy.deepcopy(_overview_cache["payload"])
+                    payload["cache_hit"] = True
+                    payload["cache_stale"] = True
+                    payload["cache_age_sec"] = int(age)
+                    payload["cache_warning"] = f"Live Taostats fetch failed; served cached data instead: {e}"
+                    log.warning("taostats overview live fetch failed; served stale cache age=%ss: %s", int(age), e)
+                    return payload
+            try:
+                payload = overview_from_snapshot_file(DEFAULT_SNAPSHOT_PATH)
+                payload["cache_stale"] = True
+                payload["cache_warning"] = f"Live Taostats fetch failed; served latest saved snapshot instead: {e}"
+                log.warning("taostats overview live fetch failed; served latest snapshot: %s", e)
+                return payload
+            except Exception as snapshot_error:  # noqa: BLE001
+                log.warning("taostats overview snapshot fallback unavailable: %s", snapshot_error)
+            raise
 
 
 def rows_to_points(rows: list[dict[str, Any]]) -> dict[int, SubnetPoint]:
@@ -459,6 +656,9 @@ def _overview_row_for_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         "alpha_emission_tau_per_day": row.get("alpha_emission_tau_per_day"),
         "neuron_registration_cost_tao": row.get("neuron_registration_cost_tao"),
         "incentive_burn_rate": row.get("incentive_burn_rate"),
+        "github_repo": row.get("github_repo"),
+        "logo_url": row.get("logo_url"),
+        "subnet_url": row.get("subnet_url"),
     }
 
 
@@ -649,6 +849,7 @@ def run_taostats_cycle(
     path = snapshot_path or DEFAULT_SNAPSHOT_PATH
     log.info("taostats divergence cycle: snapshot_path=%s min_div_pct=%s", path, min_divergence_pct)
     raw, merged_rows, _warn = _fetch_and_build_overview(api_key)
+    _set_overview_cache(_overview_payload(merged_rows, _warn))
     points = rows_to_points(raw)
     overview_by_netuid = {int(r["netuid"]): r for r in merged_rows}
     snapshots = append_snapshot(path, points, overview_by_netuid=overview_by_netuid)

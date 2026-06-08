@@ -4,8 +4,12 @@ export interface DashboardConfig {
   lookback_tolerance_sec: number;
   snapshot_path: string;
   taostats_api_url: string;
+  taomarketcap_api_url?: string;
+  taomarketcap_request_timeout_sec?: number;
+  taomarketcap_cache_ttl_sec?: number;
+  taomarketcap_daily_refresh_hour?: number;
+  taomarketcap_daily_refresh_minute?: number;
   request_timeout_sec: number;
-  hotkeys_config_path: string;
   /** Path of favorites.yaml on disk (resolved). */
   favorites_config_path?: string;
   /** Default favorites.yaml path bundled with the repo. */
@@ -120,6 +124,9 @@ export interface SubnetOverviewRow {
   neuron_registration_cost_tao: number | null;
   /** incentive_burn hyperparameter (0–1); null if absent */
   incentive_burn_rate: number | null;
+  github_repo?: string | null;
+  logo_url?: string | null;
+  subnet_url?: string | null;
 }
 
 export interface TaostatsOverviewResponse {
@@ -128,6 +135,59 @@ export interface TaostatsOverviewResponse {
   pool_warning: string | null;
   /** Blocks per day used for τ/day (env TAOSTATS_BLOCKS_PER_DAY); default 7200 */
   blocks_per_day?: number;
+}
+
+export interface TaoMarketCapMinerReward {
+  rank: number;
+  uid?: number;
+  netuid: number;
+  hotkey: string;
+  coldkey: string;
+  percentage?: number | null;
+  total_alpha?: number | null;
+  total_alpha_rao?: number | null;
+  tao_stake?: number | null;
+  realized_pnl_tao?: number | null;
+  unrealized_pnl_tao?: number | null;
+  alpha_per_day: number | null;
+  tao_per_day: number | null;
+  incentive?: number | null;
+  miner_performance?: number | null;
+  flagged?: boolean;
+}
+
+export interface TaoMarketCapRewardHistoryDay {
+  date: string;
+  fetched_at: number;
+  daily_reward_count?: number;
+  total_alpha_per_day?: number | null;
+  total_tao_per_day?: number | null;
+  daily_rewards?: TaoMarketCapMinerReward[];
+}
+
+export interface TaoMarketCapSubnetMinersResponse {
+  netuid: number;
+  fetched_at: number;
+  cached_at?: number;
+  cache_hit?: boolean;
+  cache_ttl_sec?: number;
+  cache_expires_at?: number;
+  source: string;
+  price_tao_per_alpha?: number | null;
+  total_count?: number;
+  miner_count: number;
+  daily_reward_count?: number;
+  total_alpha?: number | null;
+  total_alpha_per_day?: number | null;
+  total_tao_per_day?: number | null;
+  total_realized_pnl_tao?: number | null;
+  total_unrealized_pnl_tao?: number | null;
+  miners: TaoMarketCapMinerReward[];
+  daily_rewards?: TaoMarketCapMinerReward[];
+  available_reward_days?: string[];
+  reward_history?: TaoMarketCapRewardHistoryDay[];
+  current_reward_day?: TaoMarketCapRewardHistoryDay | null;
+  previous_reward_day?: TaoMarketCapRewardHistoryDay | null;
 }
 
 export interface DivergenceRow {
@@ -155,26 +215,19 @@ export interface TaostatsDivergenceResponse {
   from_snapshot_file?: boolean;
 }
 
-export interface HotkeyResult {
-  name: string;
-  netuid: number;
-  hotkey: string;
-  registered: boolean;
-  uid: number | null;
-  error: string | null;
+export interface TaoDailyNewsItem {
+  title: string;
+  excerpt: string;
+  link: string;
+  published_at: string;
+  published_date: string;
+  image_url?: string | null;
+  image_alt?: string | null;
 }
 
-export interface HotkeysCheckResponse {
-  results: HotkeyResult[];
-}
-
-export interface HotkeyConfigEntry {
-  name: string;
-  netuid: number;
-  hotkey: string;
-}
-
-export interface HotkeysConfigResponse {
-  network: string;
-  hotkeys: HotkeyConfigEntry[];
+export interface TaoDailyNewsResponse {
+  source: string;
+  fetched_at: number;
+  date_range: string[];
+  items: TaoDailyNewsItem[];
 }

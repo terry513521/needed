@@ -1,12 +1,12 @@
 """
-Local dashboard: Taostats emission vs. registration-burn divergence (~24h) + hotkey checks.
+Local dashboard: Taostats emission vs. registration-burn divergence (~24h) + TAO Daily alarms.
 
   TAOSTATS_API_KEY — required for Taostats (can live in `.env`)
 
   Optional (all can be set in `.env`; see `.env.example`):
   TAOSTATS_API_URL, TAOSTATS_SNAPSHOT_PATH, TAOSTATS_MIN_DIVERGENCE_PCT,
   TAOSTATS_LOOKBACK_SEC, TAOSTATS_LOOKBACK_TOLERANCE_SEC, TAOSTATS_REQUEST_TIMEOUT,
-  BITTENSOR_TOOLS_HOTKEYS, BITTENSOR_NETWORK, DASHBOARD_HOST, DASHBOARD_PORT,
+  BITTENSOR_NETWORK, DASHBOARD_HOST, DASHBOARD_PORT,
   DASHBOARD_CORS_ORIGINS (comma-separated, for React dev server)
 
 React UI: `npm run dev` in frontend/ (proxies /api → this server), or `npm run build`
@@ -23,7 +23,6 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 
 from dashboard.env import REPO_ROOT, env_file_path, load_env, notification_env_summary
 
@@ -56,13 +55,6 @@ from dashboard.favorites_notifier import (
     notify_interval_sec as favorites_notify_interval_sec,
     run_favorites_notifier,
 )
-from dashboard.hotkeys import (
-    DEFAULT_CONFIG as HOTKEYS_DEFAULT_PATH,
-    add_hotkey,
-    check_hotkeys,
-    list_configured_hotkeys,
-    remove_hotkey,
-)
 from dashboard.taostats_client import (
     DEFAULT_MIN_DIVERGENCE_PCT,
     DEFAULT_SNAPSHOT_PATH,
@@ -72,6 +64,16 @@ from dashboard.taostats_client import (
     divergence_from_snapshot_file,
     fetch_subnet_overview,
     run_taostats_cycle,
+)
+from dashboard.taodaily_client import fetch_taodaily_recent_news
+from dashboard.taomarketcap_client import (
+    TAOMARKETCAP_API_URL,
+    TAOMARKETCAP_CACHE_TTL_SEC,
+    TAOMARKETCAP_DAILY_REFRESH_HOUR,
+    TAOMARKETCAP_DAILY_REFRESH_MINUTE,
+    TAOMARKETCAP_REQUEST_TIMEOUT,
+    fetch_subnet_miner_rewards,
+    run_taomarketcap_cache_refresher,
 )
 from dashboard.alert_dispatch import FAVORITES_DISCORD_CHANNEL, favorites_alerts_configured
 from dashboard.github_monitor import (
@@ -104,22 +106,6 @@ _SPA_DIST = _REPO_ROOT / "frontend" / "dist"
 _SPA_ASSETS = _SPA_DIST / "assets"
 
 log = logging.getLogger(__name__)
-
-
-class HotkeyCheckBody(BaseModel):
-    netuid: int | None = None
-    ss58: str | None = Field(None, description="SS58 hotkey; with netuid, check only this key")
-
-
-class HotkeyAddBody(BaseModel):
-    name: str = ""
-    netuid: int
-    ss58: str
-
-
-class HotkeyRemoveBody(BaseModel):
-    netuid: int
-    ss58: str
 
 
 class FavoriteBody(BaseModel):
@@ -204,10 +190,14 @@ async def _lifespan(_: FastAPI):
         run_github_monitor(),
         name="github_monitor",
     )
+    taomarketcap_cache_task = asyncio.create_task(
+        run_taomarketcap_cache_refresher(),
+        name="taomarketcap_cache_refresher",
+    )
     try:
         yield
     finally:
-        for task in (notifier_task, github_task):
+        for task in (notifier_task, github_task, taomarketcap_cache_task):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -270,9 +260,12 @@ def api_config() -> dict:
         "lookback_tolerance_sec": LOOKBACK_TOLERANCE_SEC,
         "snapshot_path": str(DEFAULT_SNAPSHOT_PATH),
         "taostats_api_url": os.environ.get("TAOSTATS_API_URL", "https://api.taostats.io").rstrip("/"),
+        "taomarketcap_api_url": TAOMARKETCAP_API_URL,
+        "taomarketcap_request_timeout_sec": TAOMARKETCAP_REQUEST_TIMEOUT,
+        "taomarketcap_cache_ttl_sec": TAOMARKETCAP_CACHE_TTL_SEC,
+        "taomarketcap_daily_refresh_hour": TAOMARKETCAP_DAILY_REFRESH_HOUR,
+        "taomarketcap_daily_refresh_minute": TAOMARKETCAP_DAILY_REFRESH_MINUTE,
         "request_timeout_sec": REQUEST_TIMEOUT,
-        "hotkeys_config_path": os.environ.get("BITTENSOR_TOOLS_HOTKEYS", "").strip()
-        or str(HOTKEYS_DEFAULT_PATH),
         "favorites_config_path": str(favorites_yaml_path()),
         "favorites_default_path": str(FAVORITES_DEFAULT_PATH),
         "notifications_config_path": str(notifications_yaml_path()),
@@ -291,7 +284,7 @@ def api_config() -> dict:
 
 
 @app.get("/api/taostats/overview")
-def api_taostats_overview() -> dict:
+def api_taostats_overview(refresh: bool = False) -> dict:
     """All subnets: name, alpha price (pool), emission τ/day, reg cost τ, incentive_burn; no snapshot write."""
     key = os.environ.get("TAOSTATS_API_KEY", "").strip()
     if not key:
@@ -301,9 +294,21 @@ def api_taostats_overview() -> dict:
             detail="Set TAOSTATS_API_KEY in the environment or `.env` (Taostats API key).",
         )
     try:
-        return fetch_subnet_overview(key)
+        return fetch_subnet_overview(key, refresh=refresh)
     except Exception as e:  # noqa: BLE001
         log.exception("taostats overview failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.get("/api/taomarketcap/subnets/{netuid}/miners")
+def api_taomarketcap_subnet_miners(netuid: int, refresh: bool = False) -> dict:
+    """Subnet miner reward status from TaoMarketCap, cached daily by default."""
+    if netuid < 0:
+        raise HTTPException(status_code=400, detail="netuid must be a non-negative integer.")
+    try:
+        return fetch_subnet_miner_rewards(netuid, refresh=refresh)
+    except Exception as e:  # noqa: BLE001
+        log.exception("taomarketcap subnet miners failed netuid=%s: %s", netuid, e)
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
@@ -332,61 +337,25 @@ def api_taostats_divergence() -> dict:
     try:
         return run_taostats_cycle(key, snapshot_path=DEFAULT_SNAPSHOT_PATH, min_divergence_pct=None)
     except Exception as e:  # noqa: BLE001
-        log.exception("taostats divergence cycle failed: %s", e)
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        log.exception("taostats divergence cycle failed; falling back to latest snapshot: %s", e)
+        try:
+            fallback = divergence_from_snapshot_file(DEFAULT_SNAPSHOT_PATH, min_divergence_pct=None)
+            fallback["warning"] = f"Live Taostats refresh failed; showing latest saved snapshot instead: {e}"
+            fallback["from_snapshot_file"] = True
+            return fallback
+        except Exception as fallback_error:  # noqa: BLE001
+            log.exception("divergence snapshot fallback failed: %s", fallback_error)
+            raise HTTPException(status_code=502, detail=str(e)) from e
 
 
-@app.get("/api/hotkeys/config")
-def api_hotkeys_config() -> dict:
-    """Hotkeys from YAML (no chain query)."""
-    log.debug("hotkeys config requested")
-    return list_configured_hotkeys()
-
-
-@app.post("/api/hotkeys/entry")
-def api_hotkeys_add(body: HotkeyAddBody) -> dict:
-    """Append a hotkey row to the YAML on disk (same shape as GET /api/hotkeys/config)."""
+@app.get("/api/alarms/news")
+def api_alarms_news() -> dict:
+    """TAO Daily posts from today and yesterday for the dashboard alarms panel."""
     try:
-        add_hotkey(body.name, body.netuid, body.ss58)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except OSError as e:
-        log.exception("hotkeys write failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Could not write hotkeys file: {e}") from e
-    log.info("hotkey added netuid=%s", body.netuid)
-    return list_configured_hotkeys()
-
-
-@app.post("/api/hotkeys/remove")
-def api_hotkeys_remove(body: HotkeyRemoveBody) -> dict:
-    """Remove a hotkey row matching netuid + SS58 from the YAML on disk."""
-    try:
-        ok = remove_hotkey(body.netuid, body.ss58)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except OSError as e:
-        log.exception("hotkeys write failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Could not write hotkeys file: {e}") from e
-    if not ok:
-        raise HTTPException(status_code=404, detail="Hotkey not found for that netuid.")
-    log.info("hotkey removed netuid=%s", body.netuid)
-    return list_configured_hotkeys()
-
-
-@app.post("/api/hotkeys/check")
-def api_hotkeys_check(
-    body: HotkeyCheckBody = Body(default_factory=HotkeyCheckBody),
-) -> dict:
-    """Check all hotkeys, or one when both `netuid` and `ss58` are set."""
-    try:
-        if body.netuid is not None and body.ss58 and body.ss58.strip():
-            results = check_hotkeys(only_netuid=body.netuid, only_ss58=body.ss58.strip())
-        else:
-            results = check_hotkeys()
-        return {"results": results}
+        return fetch_taodaily_recent_news()
     except Exception as e:  # noqa: BLE001
-        log.exception("hotkeys check failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        log.exception("taodaily news fetch failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @app.get("/api/favorites")
@@ -398,7 +367,7 @@ def api_favorites_list() -> dict:
 @app.post("/api/favorites/add")
 def api_favorites_add(body: FavoriteBody) -> dict:
     try:
-        favs = add_favorite(body.netuid)
+        add_favorite(body.netuid)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OSError as e:
@@ -411,7 +380,7 @@ def api_favorites_add(body: FavoriteBody) -> dict:
 @app.post("/api/favorites/remove")
 def api_favorites_remove(body: FavoriteBody) -> dict:
     try:
-        favs = remove_favorite(body.netuid)
+        remove_favorite(body.netuid)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OSError as e:
@@ -608,13 +577,8 @@ if _SPA_ASSETS.is_dir():
     app.mount("/assets", StaticFiles(directory=str(_SPA_ASSETS)), name="spa_assets")
 
 
-def main() -> None:
-    import uvicorn
-
-    host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
-    port = int(os.environ.get("DASHBOARD_PORT", "8765"))
-    uvicorn.run("dashboard.app:app", host=host, port=port, reload=False)
-
-
-if __name__ == "__main__":
-    main()
+# def main() -> None:
+#     import uvicorn
+#     host = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
+#     port = int(os.environ.get("DASHBOARD_PORT", "8765"))
+#     uvicorn.run("dashboard.app:app", host=host, port=port, reload=True)

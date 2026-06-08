@@ -1,139 +1,25 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "./api";
+import { AlarmsModal } from "./components/alarms/AlarmsPanel";
+import { FavoriteNotificationsSettings, FavoriteSubnetsList } from "./components/favorites/Favorites";
+import { DashboardHero, type ThemeMode } from "./components/layout/DashboardHero";
+import { TabsShell } from "./components/layout/Tabs";
+import { MinerRewardsModal } from "./components/miners/MinerRewardsModal";
+import { DivergenceTable, HIGH_DIVERGENCE_HIGHLIGHT_PP, SubnetOverviewTable, type OverviewDeltaRow } from "./components/taostats/TaostatsTables";
+import { actualRewardTauPerDay, parseFavoritesResponse, pctDelta } from "./utils/dashboard";
+import { formatUnixSeconds } from "./utils/format";
 import type {
   DashboardConfig,
   FavoriteAlerts,
-  FavoriteEntry,
-  GithubMonitorStatus,
-  NotificationChannelSetting,
-  NotificationSettingsResponse,
   FavoritesResponse,
-  HotkeysCheckResponse,
-  HotkeysConfigResponse,
-  SubnetOverviewRow,
+  TaoDailyNewsResponse,
+  TaoMarketCapSubnetMinersResponse,
   TaostatsDivergenceResponse,
   TaostatsOverviewResponse,
-  DiscordStatus,
-  TelegramStatus,
 } from "./types";
 import "./App.css";
 
-function formatPct(v: number | null): string {
-  if (v == null) return "—";
-  return `${v.toFixed(2)}%`;
-}
-
-/** Percent change from previous to current; null if previous baseline is zero. */
-function pctFromPrev(prev: number, now: number): number | null {
-  if (prev <= 0 && now <= 0) return 0;
-  if (prev <= 0) return null;
-  return ((now - prev) / prev) * 100;
-}
-
-/** Like pctFromPrev but for nullable API fields (missing vs 0). */
-function pctDelta(prev: number | null, now: number | null): number | null {
-  if (prev === null || now === null) return null;
-  return pctFromPrev(prev, now);
-}
-
-function formatTaoDay(tau: number | null): string {
-  if (tau == null || !Number.isFinite(tau)) return "—";
-  const v = Math.max(0, tau);
-  return v.toFixed(6);
-}
-
-function formatBurnPct(rate: number | null): string {
-  if (rate == null || !Number.isFinite(rate)) return "—";
-  return `${(rate * 100).toFixed(2)}%`;
-}
-
-/** Backend snapshot/baseline timestamps are Unix seconds. */
-function formatUnixSeconds(ts: number | null | undefined): string {
-  if (ts == null || !Number.isFinite(ts)) return "—";
-  return new Date(ts * 1000).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  });
-}
-
-function formatAgeAgo(tsSec: number): string {
-  const now = Date.now() / 1000;
-  const diff = Math.max(0, now - tsSec);
-  if (diff < 45) return "just now";
-  if (diff < 3600) {
-    const m = Math.floor(diff / 60);
-    return `${m} min ago`;
-  }
-  if (diff < 86400) {
-    const h = Math.floor(diff / 3600);
-    const m = Math.floor((diff % 3600) / 60);
-    return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`;
-  }
-  const d = Math.floor(diff / 86400);
-  return d === 1 ? "1 day ago" : `${d} days ago`;
-}
-
-/** Miner-facing τ/day after incentive burn: alpha emission (τ/day) × (1 − burn rate). */
-function actualRewardTauPerDay(alphaEmissionTauPerDay: number | null, burn: number | null): number | null {
-  if (
-    alphaEmissionTauPerDay == null ||
-    burn == null ||
-    !Number.isFinite(alphaEmissionTauPerDay) ||
-    !Number.isFinite(burn)
-  ) {
-    return null;
-  }
-  return alphaEmissionTauPerDay * (1 - burn) * 0.41;
-}
-
-function formatDeltaPct(pct: number): string {
-  const sign = pct > 0 ? "+" : "";
-  return `${sign}${pct.toFixed(2)}%`;
-}
-
-/** Highlight rows when |Δ emission% − Δ burn%| is strictly above this (percentage points). */
-const HIGH_DIVERGENCE_HIGHLIGHT_PP = 2;
-
-type HotkeyUiRow = {
-  name: string;
-  netuid: number;
-  hotkey: string;
-  /** null = not checked yet */
-  registered: boolean | null;
-  uid: number | null;
-  error: string | null;
-  refreshing: boolean;
-};
-
-function hotkeysConfigToUiRows(h: HotkeysConfigResponse): HotkeyUiRow[] {
-  return h.hotkeys.map((x) => ({
-    name: x.name,
-    netuid: x.netuid,
-    hotkey: x.hotkey,
-    registered: null,
-    uid: null,
-    error: null,
-    refreshing: false,
-  }));
-}
-
-type MainTab = "taostats" | "favorites" | "hotkeys";
-
-type OverviewDeltaRow = {
-  emission: number | null;
-  alphaEmission: number | null;
-  burn: number | null;
-  reg: number | null;
-  actualReward: number | null;
-};
+type MainTab = "taostats" | "favorites";
 
 /**
  * Legacy localStorage key — favorites are now persisted on the backend via
@@ -141,6 +27,12 @@ type OverviewDeltaRow = {
  * only so existing browser-side favorites get migrated once on first load.
  */
 const LEGACY_FAVORITES_STORAGE_KEY = "bittensor-tools.favorite-subnets";
+const THEME_STORAGE_KEY = "bittensor-tools.theme-mode";
+
+function readInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") return "day";
+  return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "day";
+}
 
 function readLegacyFavorites(): number[] {
   if (typeof window === "undefined") return [];
@@ -172,57 +64,9 @@ function clearLegacyFavorites(): void {
   }
 }
 
-/** Coerce API / YAML values to deduped non-negative integer netuids. */
-function normalizeFavoriteIds(raw: unknown): number[] {
-  if (!Array.isArray(raw)) return [];
-  const out: number[] = [];
-  const seen = new Set<number>();
-  for (const v of raw) {
-    const n = typeof v === "number" ? v : Number(v);
-    if (!Number.isInteger(n) || n < 0 || seen.has(n)) continue;
-    seen.add(n);
-    out.push(n);
-  }
-  return out;
-}
-
-/** Same column order as value cells in each favorite row (α price → TAO in → α emit → …). */
-const ALERT_METRIC_FIELDS: { key: keyof FavoriteAlerts; label: string; short: string }[] = [
-  { key: "alpha_price_pct", label: "Alpha price (τ/α)", short: "α price" },
-  { key: "root_emission_pct", label: "Root TAO in (τ/day)", short: "TAO in" },
-  { key: "alpha_emission_pct", label: "Alpha emission (τ/day)", short: "α emit" },
-  { key: "burn_pct", label: "Incentive burn", short: "burn" },
-  { key: "reg_pct", label: "Reg cost (τ)", short: "reg" },
-  { key: "actual_reward_pct", label: "Actual reward (τ/day)", short: "reward" },
-];
-
-function parseFavoritesResponse(resp: FavoritesResponse): {
-  ids: number[];
-  alerts: Record<number, FavoriteAlerts>;
-  github: Record<number, string | null>;
-} {
-  const raw = resp.favorites;
-  if (!Array.isArray(raw)) return { ids: [], alerts: {}, github: {} };
-  if (raw.length > 0 && typeof raw[0] === "number") {
-    const ids = normalizeFavoriteIds(raw);
-    return { ids, alerts: {}, github: {} };
-  }
-  const ids: number[] = [];
-  const alerts: Record<number, FavoriteAlerts> = {};
-  const github: Record<number, string | null> = {};
-  for (const item of raw as FavoriteEntry[]) {
-    if (!item || typeof item !== "object") continue;
-    const nu = Number(item.netuid);
-    if (!Number.isInteger(nu) || nu < 0) continue;
-    ids.push(nu);
-    alerts[nu] = item.alerts ?? {};
-    github[nu] = item.github_url ?? null;
-  }
-  return { ids: normalizeFavoriteIds(ids), alerts, github };
-}
-
 export default function App() {
   const [mainTab, setMainTab] = useState<MainTab>("taostats");
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme());
   const [config, setConfig] = useState<DashboardConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
 
@@ -237,11 +81,15 @@ export default function App() {
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewDeltas, setOverviewDeltas] = useState<Record<number, OverviewDeltaRow>>({});
   const prevOverviewRef = useRef<Record<number, OverviewDeltaRow> | null>(null);
+  const [minerModalNetuid, setMinerModalNetuid] = useState<number | null>(null);
+  const [minerModalData, setMinerModalData] = useState<TaoMarketCapSubnetMinersResponse | null>(null);
+  const [minerModalLoading, setMinerModalLoading] = useState(false);
+  const [minerModalError, setMinerModalError] = useState<string | null>(null);
 
-  const [hotkeyNetwork, setHotkeyNetwork] = useState<string | null>(null);
-  const [hotkeyRows, setHotkeyRows] = useState<HotkeyUiRow[]>([]);
-  const [hotkeysListError, setHotkeysListError] = useState<string | null>(null);
-  const [hotkeysActionError, setHotkeysActionError] = useState<string | null>(null);
+  const [alarmNews, setAlarmNews] = useState<TaoDailyNewsResponse | null>(null);
+  const [alarmNewsLoading, setAlarmNewsLoading] = useState(true);
+  const [alarmNewsError, setAlarmNewsError] = useState<string | null>(null);
+  const [alarmModalOpen, setAlarmModalOpen] = useState(true);
 
   const [favorites, setFavorites] = useState<Set<number>>(() => new Set());
   const [favoriteAlerts, setFavoriteAlerts] = useState<Record<number, FavoriteAlerts>>({});
@@ -252,6 +100,11 @@ export default function App() {
   const skipFavoritesHydrationRef = useRef(false);
   const favoritesTogglingRef = useRef<Set<number>>(new Set());
   const [favoritesToggling, setFavoritesToggling] = useState<Set<number>>(() => new Set());
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
   const applyFavorites = useCallback((ids: number[]) => {
     const next = new Set(ids);
@@ -302,7 +155,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyFavoritesConfig]);
+  }, [applyFavorites]);
 
   const toggleFavorite = useCallback(
     async (netuid: number) => {
@@ -357,13 +210,6 @@ export default function App() {
     [applyFavoritesConfig],
   );
 
-  const applyHotkeysConfig = useCallback((h: HotkeysConfigResponse) => {
-    setHotkeyNetwork(h.network);
-    setHotkeyRows(hotkeysConfigToUiRows(h));
-    setHotkeysListError(null);
-    setHotkeysActionError(null);
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -387,21 +233,28 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setAlarmNewsLoading(true);
     (async () => {
       try {
-        const h = await fetchJson<HotkeysConfigResponse>("/api/hotkeys/config");
-        if (!cancelled) applyHotkeysConfig(h);
+        const news = await fetchJson<TaoDailyNewsResponse>("/api/alarms/news");
+        if (!cancelled) {
+          setAlarmNews(news);
+          setAlarmNewsError(null);
+          if (news.items.length > 0) setAlarmModalOpen(true);
+        }
       } catch (e) {
         if (!cancelled) {
-          setHotkeyRows([]);
-          setHotkeysListError(e instanceof Error ? e.message : String(e));
+          setAlarmNews(null);
+          setAlarmNewsError(e instanceof Error ? e.message : String(e));
         }
+      } finally {
+        if (!cancelled) setAlarmNewsLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [applyHotkeysConfig]);
+  }, []);
 
   const applyOverviewData = useCallback((data: TaostatsOverviewResponse) => {
     const prev = prevOverviewRef.current;
@@ -494,10 +347,8 @@ export default function App() {
     setTaostatsWarnIsError(false);
     setOverviewError(null);
     try {
-      const [ov, j] = await Promise.all([
-        fetchJson<TaostatsOverviewResponse>("/api/taostats/overview"),
-        fetchJson<TaostatsDivergenceResponse>("/api/taostats/divergence"),
-      ]);
+      const j = await fetchJson<TaostatsDivergenceResponse>("/api/taostats/divergence");
+      const ov = await fetchJson<TaostatsOverviewResponse>("/api/taostats/overview");
       applyOverviewData(ov);
       setDivergence(j);
       if (j.warning) {
@@ -526,6 +377,30 @@ export default function App() {
     }
   }, [applyOverviewData]);
 
+  const openMinerRewards = useCallback(async (netuid: number) => {
+    setMinerModalNetuid(netuid);
+    setMinerModalData(null);
+    setMinerModalError(null);
+    setMinerModalLoading(true);
+    try {
+      const data = await fetchJson<TaoMarketCapSubnetMinersResponse>(
+        `/api/taomarketcap/subnets/${netuid}/miners`,
+      );
+      setMinerModalData(data);
+    } catch (e) {
+      setMinerModalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMinerModalLoading(false);
+    }
+  }, []);
+
+  const closeMinerRewards = useCallback(() => {
+    setMinerModalNetuid(null);
+    setMinerModalData(null);
+    setMinerModalError(null);
+    setMinerModalLoading(false);
+  }, []);
+
   const highDivergenceNetuids = useMemo(() => {
     const set = new Set<number>();
     if (!divergence?.divergences?.length) return set;
@@ -537,70 +412,17 @@ export default function App() {
     return set;
   }, [divergence?.divergences]);
 
-  const refreshOneHotkey = useCallback(async (netuid: number, ss58: string) => {
-    if (!ss58) return;
-    setHotkeyRows((prev) =>
-      prev.map((r) =>
-        r.netuid === netuid && r.hotkey === ss58 ? { ...r, refreshing: true, error: null } : r,
-      ),
-    );
-    try {
-      const j = await fetchJson<HotkeysCheckResponse>("/api/hotkeys/check", {
-        method: "POST",
-        body: JSON.stringify({ netuid, ss58 }),
-      });
-      const res = j.results[0];
-      if (!res) throw new Error("empty result");
-      setHotkeyRows((prev) =>
-        prev.map((r) =>
-          r.netuid === netuid && r.hotkey === ss58
-            ? {
-                ...r,
-                name: res.name || r.name,
-                registered: res.registered,
-                uid: res.uid ?? null,
-                error: res.error,
-                refreshing: false,
-              }
-            : r,
-        ),
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setHotkeyRows((prev) =>
-        prev.map((r) =>
-          r.netuid === netuid && r.hotkey === ss58
-            ? { ...r, error: msg, refreshing: false }
-            : r,
-        ),
-      );
-    }
-  }, []);
-
-  const deleteHotkeyRow = useCallback(
-    async (netuid: number, ss58: string) => {
-      if (!ss58) return;
-      if (!window.confirm(`Remove this hotkey from the config file (netuid ${netuid})?`)) return;
-      setHotkeysActionError(null);
-      try {
-        const h = await fetchJson<HotkeysConfigResponse>("/api/hotkeys/remove", {
-          method: "POST",
-          body: JSON.stringify({ netuid, ss58 }),
-        });
-        applyHotkeysConfig(h);
-      } catch (e) {
-        setHotkeysActionError(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [applyHotkeysConfig],
-  );
-
   const th = config?.min_divergence_pct ?? 2;
   const lookbackH = config ? Math.round(config.lookback_sec / 3600) : 24;
 
   return (
     <>
-      <h1>Bittensor tools dashboard</h1>
+      <DashboardHero
+        themeMode={themeMode}
+        onToggleTheme={() => setThemeMode((mode) => (mode === "day" ? "dark" : "day"))}
+        subnetsCount={overviewData?.subnets.length ?? "—"}
+        favoritesCount={favorites.size}
+      />
 
       {configError ? (
         <p className="sub warn-text">
@@ -611,7 +433,7 @@ export default function App() {
         <p className="sub">Loading settings…</p>
       ) : null}
 
-      <div className="tabs">
+      <TabsShell>
         <div className="tabs-list" role="tablist" aria-label="Dashboard views">
           <button
             type="button"
@@ -637,18 +459,6 @@ export default function App() {
           >
             Favorite subnets
             {favorites.size > 0 ? <span className="tab-count"> ({favorites.size})</span> : null}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            id="tab-hotkeys"
-            className={`tab-btn ${mainTab === "hotkeys" ? "active" : ""}`}
-            aria-selected={mainTab === "hotkeys"}
-            aria-controls="panel-hotkeys"
-            tabIndex={mainTab === "hotkeys" ? 0 : -1}
-            onClick={() => setMainTab("hotkeys")}
-          >
-            Registered hotkeys
           </button>
         </div>
 
@@ -696,18 +506,6 @@ export default function App() {
               {taostatsStatus}
             </span>
           </div>
-          {divergence?.snapshot_time != null ? (
-            <p className="msg snapshot-taken">
-              <strong>Snapshot taken</strong>: {formatUnixSeconds(divergence.snapshot_time)}
-              <span className="sub"> ({formatAgeAgo(divergence.snapshot_time)})</span>
-              {divergence.baseline_time != null ? (
-                <>
-                  {" "}
-                  · <strong>Baseline</strong>: {formatUnixSeconds(divergence.baseline_time)}
-                </>
-              ) : null}
-            </p>
-          ) : null}
           <SubnetOverviewTable
             loading={overviewLoading}
             error={overviewError}
@@ -717,6 +515,7 @@ export default function App() {
             favorites={favorites}
             onToggleFavorite={toggleFavorite}
             favoritesToggling={favoritesToggling}
+            onOpenMinerRewards={openMinerRewards}
           />
           <h3 className="subsection-title">24h emission vs burn divergence</h3>
           <p className={taostatsWarnIsError ? "msg warn" : "msg"}>{taostatsWarn}</p>
@@ -778,1306 +577,28 @@ export default function App() {
           <FavoriteNotificationsSettings favoriteCount={favorites.size} />
         </div>
 
-        <div
-          id="panel-hotkeys"
-          role="tabpanel"
-          aria-labelledby="tab-hotkeys"
-          hidden={mainTab !== "hotkeys"}
-          className="tab-panel"
-        >
-          <p className="msg">
-            Configure <code>hotkeys.yaml</code> (or <code>BITTENSOR_TOOLS_HOTKEYS</code> in{" "}
-            <code>.env</code>). Optional <code>BITTENSOR_NETWORK</code> overrides the YAML{" "}
-            <code>network</code> for chain checks only (the file on disk keeps its own{" "}
-            <code>network</code>).
-            {hotkeyNetwork ? (
-              <>
-                {" "}
-                Effective network: <code>{hotkeyNetwork}</code>.
-              </>
-            ) : null}{" "}
-            Add or remove rows below; changes are written to that YAML file.
-          </p>
-          <h2>Registered hotkeys</h2>
-          {hotkeysListError ? (
-            <p className="msg warn">Could not load hotkeys list: {hotkeysListError}</p>
-          ) : null}
-          {hotkeysActionError ? <p className="msg warn">{hotkeysActionError}</p> : null}
-          <h3 className="subsection-title">Add hotkey</h3>
-          <HotkeysAddForm onSuccess={applyHotkeysConfig} />
-          <HotkeysTable rows={hotkeyRows} onRefresh={refreshOneHotkey} onDelete={deleteHotkeyRow} />
-        </div>
-      </div>
-    </>
-  );
-}
-
-function formatAlphaPrice(p: number | null): string {
-  if (p == null || !Number.isFinite(p)) return "—";
-  return p.toFixed(8);
-}
-
-function formatRegCostTau(tau: number | null): string {
-  if (tau == null || !Number.isFinite(tau)) return "—";
-  return Math.max(0, tau).toFixed(6);
-}
-
-type OverviewSortKey =
-  | "netuid"
-  | "name"
-  | "alpha_price"
-  | "emission"
-  | "alpha_emission"
-  | "reg"
-  | "burn"
-  | "actual_reward";
-
-function compareNullableNum(a: number | null, b: number | null, ascending: boolean): number {
-  const dir = ascending ? 1 : -1;
-  const aBad = a == null || !Number.isFinite(a);
-  const bBad = b == null || !Number.isFinite(b);
-  if (aBad && bBad) return 0;
-  if (aBad) return 1;
-  if (bBad) return -1;
-  if (a === b) return 0;
-  return dir * (a < b ? -1 : 1);
-}
-
-function sortSubnetRows(rows: SubnetOverviewRow[], key: OverviewSortKey, dir: "asc" | "desc"): SubnetOverviewRow[] {
-  const ascending = dir === "asc";
-  const mult = ascending ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    switch (key) {
-      case "netuid":
-        return mult * (a.netuid - b.netuid);
-      case "name": {
-        const c = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-        if (c !== 0) return mult * c;
-        return mult * (a.netuid - b.netuid);
-      }
-      case "alpha_price":
-        return compareNullableNum(a.alpha_price_tao, b.alpha_price_tao, ascending);
-      case "emission":
-        return compareNullableNum(a.emission_tau_per_day, b.emission_tau_per_day, ascending);
-      case "alpha_emission":
-        return compareNullableNum(
-          a.alpha_emission_tau_per_day ?? null,
-          b.alpha_emission_tau_per_day ?? null,
-          ascending,
-        );
-      case "reg":
-        return compareNullableNum(a.neuron_registration_cost_tao, b.neuron_registration_cost_tao, ascending);
-      case "burn":
-        return compareNullableNum(a.incentive_burn_rate, b.incentive_burn_rate, ascending);
-      case "actual_reward":
-        return compareNullableNum(
-          actualRewardTauPerDay(a.alpha_emission_tau_per_day ?? null, a.incentive_burn_rate),
-          actualRewardTauPerDay(b.alpha_emission_tau_per_day ?? null, b.incentive_burn_rate),
-          ascending,
-        );
-      default:
-        return 0;
-    }
-  });
-}
-
-function OverviewSortTh({
-  label,
-  colKey,
-  activeKey,
-  sortDir,
-  onSort,
-}: {
-  label: string;
-  colKey: OverviewSortKey;
-  activeKey: OverviewSortKey;
-  sortDir: "asc" | "desc";
-  onSort: (k: OverviewSortKey) => void;
-}) {
-  const active = activeKey === colKey;
-  const ariaSort = active ? (sortDir === "asc" ? "ascending" : "descending") : "none";
-  return (
-    <th scope="col" aria-sort={ariaSort}>
-      <button type="button" className="th-sort-btn" onClick={() => onSort(colKey)}>
-        {label}
-        {active ? <span className="sort-ind">{sortDir === "asc" ? " ▲" : " ▼"}</span> : null}
-      </button>
-    </th>
-  );
-}
-
-function SubnetOverviewTable({
-  loading,
-  error,
-  data,
-  deltas,
-  highlightNetuids,
-  favorites,
-  onToggleFavorite,
-  favoritesToggling,
-  emptyMessage,
-}: {
-  loading: boolean;
-  error: string | null;
-  data: TaostatsOverviewResponse | null;
-  deltas: Record<number, OverviewDeltaRow>;
-  highlightNetuids: Set<number>;
-  favorites: Set<number>;
-  onToggleFavorite: (netuid: number) => void;
-  favoritesToggling: Set<number>;
-  emptyMessage?: string;
-}) {
-  const [sortKey, setSortKey] = useState<OverviewSortKey>("netuid");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  const toggleSort = (k: OverviewSortKey) => {
-    if (sortKey === k) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(k);
-      setSortDir("asc");
-    }
-  };
-
-  const sortedSubnets = useMemo(() => {
-    if (!data?.subnets.length) return [];
-    return sortSubnetRows(data.subnets, sortKey, sortDir);
-  }, [data?.subnets, sortKey, sortDir]);
-
-  if (error && !data) {
-    return <p className="msg warn">Subnet table: {error}</p>;
-  }
-  if (loading && !data) {
-    return <p className="msg">Loading subnets…</p>;
-  }
-  if (!data?.subnets.length) {
-    const fallback = emptyMessage ?? "No subnets returned.";
-    return <p className="msg">{loading ? "Loading subnets…" : fallback}</p>;
-  }
-  return (
-    <>
-      {data.pool_warning ? <p className="msg warn">{data.pool_warning}</p> : null}
-      {error ? <p className="msg warn">Last refresh issue: {error}</p> : null}
-      <p className="msg footer-hint">
-        Click a column header to sort. Blue <span className="delta-pct inline-delta">(+0.00%)</span> = change
-        vs previous refresh for that value.
-      </p>
-      <div className="table-scroll">
-        <table className="subnet-overview-table">
-          <thead>
-            <tr>
-              <th scope="col" className="favorite-col" aria-label="Favorite">
-                <span aria-hidden="true">★</span>
-              </th>
-              <OverviewSortTh
-                label="netuid"
-                colKey="netuid"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Name"
-                colKey="name"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Alpha price (τ/α)"
-                colKey="alpha_price"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Root TAO in (τ/day)"
-                colKey="emission"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Alpha emission (τ/day)"
-                colKey="alpha_emission"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Reg cost (τ)"
-                colKey="reg"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Incentive burn"
-                colKey="burn"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-              <OverviewSortTh
-                label="Actual reward (τ/day)"
-                colKey="actual_reward"
-                activeKey={sortKey}
-                sortDir={sortDir}
-                onSort={toggleSort}
-              />
-            </tr>
-          </thead>
-          <tbody>
-            {sortedSubnets.map((r) => {
-              const d = deltas[r.netuid];
-              const rowHi = highlightNetuids.has(r.netuid);
-              const nu = Number(r.netuid);
-              const isFav = favorites.has(nu);
-              const toggling = favoritesToggling.has(nu);
-              return (
-                <tr key={r.netuid} className={rowHi ? "row-high-divergence" : undefined}>
-                  <td className="favorite-col">
-                    <button
-                      type="button"
-                      className={`fav-btn${isFav ? " is-fav" : ""}`}
-                      disabled={toggling}
-                      onClick={() => onToggleFavorite(nu)}
-                      aria-pressed={isFav}
-                      aria-label={
-                        isFav
-                          ? `Remove subnet ${r.netuid} from favorites`
-                          : `Add subnet ${r.netuid} to favorites`
-                      }
-                      title={isFav ? "Remove from favorites" : "Add to favorites"}
-                    >
-                      {isFav ? "★" : "☆"}
-                    </button>
-                  </td>
-                  <td>
-                    <a
-                      href={`https://taostats.io/subnets/${r.netuid}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {r.netuid}
-                    </a>
-                  </td>
-                  <td className="subnet-name-cell">{r.name}</td>
-                  <td>{formatAlphaPrice(r.alpha_price_tao)}</td>
-                  <td>
-                    <span>{formatTaoDay(r.emission_tau_per_day)}</span>
-                    {d?.emission != null ? (
-                      <span className="delta-pct"> {formatDeltaPct(d.emission)}</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <span>{formatTaoDay(r.alpha_emission_tau_per_day ?? null)}</span>
-                    {d?.alphaEmission != null ? (
-                      <span className="delta-pct"> {formatDeltaPct(d.alphaEmission)}</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <span>{formatRegCostTau(r.neuron_registration_cost_tao)}</span>
-                    {d?.reg != null ? (
-                      <span className="delta-pct"> {formatDeltaPct(d.reg)}</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <span>{formatBurnPct(r.incentive_burn_rate)}</span>
-                    {d?.burn != null ? (
-                      <span className="delta-pct"> {formatDeltaPct(d.burn)}</span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <span>
-                      {formatTaoDay(
-                        actualRewardTauPerDay(r.alpha_emission_tau_per_day ?? null, r.incentive_burn_rate),
-                      )}
-                    </span>
-                    {d?.actualReward != null ? (
-                      <span className="delta-pct"> {formatDeltaPct(d.actualReward)}</span>
-                    ) : null}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
-
-function DivergenceTable({ data }: { data: TaostatsDivergenceResponse | null }) {
-  if (!data) {
-    return (
-      <p className="msg">
-        Could not load snapshot-based divergence yet. After you save at least one snapshot (Refresh
-        Taostats), reopen the page or check the API server.
-      </p>
-    );
-  }
-  const rows = data.divergences ?? [];
-  const th = data.min_divergence_pct ?? 2;
-  if (!rows.length) {
-    return (
-      <p className="msg">
-        No subnets over {th}% divergence threshold (or not enough history yet).
-      </p>
-    );
-  }
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>netuid</th>
-          <th>|Δ emission% − Δ burn%|</th>
-          <th>Δ emission / day</th>
-          <th>Δ burn / day</th>
-          <th>emission now → was</th>
-          <th>burn now → was</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((x) => (
-          <tr
-            key={x.netuid}
-            className={
-              x.divergence_pct_points > HIGH_DIVERGENCE_HIGHLIGHT_PP ? "row-high-divergence" : undefined
-            }
-          >
-            <td>
-              <a
-                href={`https://taostats.io/subnets/${x.netuid}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {x.netuid}
-              </a>
-            </td>
-            <td>
-              <strong>{x.divergence_pct_points.toFixed(2)}</strong>
-            </td>
-            <td>{formatPct(x.emission_pct_per_day)}</td>
-            <td>{formatPct(x.burn_pct_per_day)}</td>
-            <td>
-              {x.emission_now} → {x.emission_then ?? "—"}
-            </td>
-            <td>
-              {x.burn_now} → {x.burn_then ?? "—"}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function HotkeysTable({
-  rows,
-  onRefresh,
-  onDelete,
-}: {
-  rows: HotkeyUiRow[];
-  onRefresh: (netuid: number, ss58: string) => void;
-  onDelete: (netuid: number, ss58: string) => void;
-}) {
-  if (!rows.length) {
-    return <p className="msg">No hotkeys in config yet. Add one above or edit the YAML file.</p>;
-  }
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>netuid</th>
-          <th>Status</th>
-          <th>uid</th>
-          <th>Hotkey</th>
-          <th className="actions"> </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={`${r.netuid}:${r.hotkey}`}>
-            <td>{r.name}</td>
-            <td>{r.netuid}</td>
-            <td>
-              {r.registered === null ? (
-                <span className="msg">—</span>
-              ) : (
-                <span className={`badge ${r.registered ? "ok" : "bad"}`}>
-                  {r.registered ? "registered" : "not registered"}
-                </span>
-              )}
-              {r.error ? <span className="msg warn inline-warn"> {r.error}</span> : null}
-            </td>
-            <td>{r.uid != null ? r.uid : "—"}</td>
-            <td>
-              <code className="hk">{r.hotkey || "—"}</code>
-            </td>
-            <td className="actions">
-              <span className="action-btns">
-                <button
-                  type="button"
-                  className="btn-sm"
-                  disabled={r.refreshing || !r.hotkey}
-                  onClick={() => onRefresh(r.netuid, r.hotkey)}
-                >
-                  {r.refreshing ? "…" : "Refresh"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-sm btn-muted"
-                  disabled={!r.hotkey}
-                  onClick={() => onDelete(r.netuid, r.hotkey)}
-                >
-                  Remove
-                </button>
-              </span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function HotkeysAddForm({ onSuccess }: { onSuccess: (h: HotkeysConfigResponse) => void }) {
-  const [name, setName] = useState("");
-  const [netuid, setNetuid] = useState("");
-  const [ss58, setSs58] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const nu = Number(netuid);
-    if (!Number.isInteger(nu) || nu < 0) {
-      setError("netuid must be a non-negative integer.");
-      return;
-    }
-    const key = ss58.trim();
-    if (!key) {
-      setError("Hotkey (SS58) is required.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const h = await fetchJson<HotkeysConfigResponse>("/api/hotkeys/entry", {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim(), netuid: nu, ss58: key }),
-      });
-      onSuccess(h);
-      setName("");
-      setNetuid("");
-      setSs58("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form className="hotkey-add-form" onSubmit={handleSubmit}>
-      {error ? <p className="msg warn hotkey-form-error">{error}</p> : null}
-      <div className="hotkey-add-fields">
-        <label>
-          Name <span className="sub">(optional)</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(ev) => setName(ev.target.value)}
-            placeholder="Label in the table"
-            autoComplete="off"
-          />
-        </label>
-        <label>
-          netuid
-          <input
-            type="text"
-            inputMode="numeric"
-            value={netuid}
-            onChange={(ev) => setNetuid(ev.target.value)}
-            placeholder="e.g. 1"
-            autoComplete="off"
-          />
-        </label>
-        <label className="hotkey-ss58-field">
-          Hotkey (SS58)
-          <input
-            type="text"
-            className="hotkey-ss58-input"
-            value={ss58}
-            onChange={(ev) => setSs58(ev.target.value)}
-            placeholder="5…"
-            spellCheck={false}
-            autoComplete="off"
-          />
-        </label>
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Saving…" : "Add to config"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function CompactMetricCell({
-  value,
-  delta,
-}: {
-  value: string;
-  delta?: number | null;
-}) {
-  return (
-    <td className="compact-num">
-      <span className="compact-val">{value}</span>
-      {delta != null ? <span className="delta-pct compact-delta">{formatDeltaPct(delta)}</span> : null}
-    </td>
-  );
-}
-
-function FavoriteSubnetsList({
-  loading,
-  overviewError,
-  overviewData,
-  favoriteIds,
-  favoriteAlerts,
-  favoriteGithub,
-  deltas,
-  highlightNetuids,
-  onToggleFavorite,
-  favoritesToggling,
-  onAlertsSaved,
-}: {
-  loading: boolean;
-  overviewError: string | null;
-  overviewData: TaostatsOverviewResponse | null;
-  favoriteIds: number[];
-  favoriteAlerts: Record<number, FavoriteAlerts>;
-  favoriteGithub: Record<number, string | null>;
-  deltas: Record<number, OverviewDeltaRow>;
-  highlightNetuids: Set<number>;
-  onToggleFavorite: (netuid: number) => void;
-  favoritesToggling: Set<number>;
-  onAlertsSaved: (resp: FavoritesResponse) => void;
-}) {
-  const rowsByNetuid = useMemo(() => {
-    const m = new Map<number, SubnetOverviewRow>();
-    for (const s of overviewData?.subnets ?? []) {
-      m.set(Number(s.netuid), s);
-    }
-    return m;
-  }, [overviewData?.subnets]);
-
-  const [expandedNetuid, setExpandedNetuid] = useState<number | null>(null);
-  const [drafts, setDrafts] = useState<Record<number, Record<string, string>>>({});
-  const [githubDrafts, setGithubDrafts] = useState<Record<number, string>>({});
-  const [savingNetuid, setSavingNetuid] = useState<number | null>(null);
-  const [savingGithubNetuid, setSavingGithubNetuid] = useState<number | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const valueColCount = 6;
-  const totalColCount = 3 + valueColCount + 1;
-
-  const toggleExpand = (netuid: number) => {
-    setExpandedNetuid((prev) => (prev === netuid ? null : netuid));
-  };
-
-  const countTriggers = (netuid: number) =>
-    ALERT_METRIC_FIELDS.filter((m) => {
-      const raw = (drafts[netuid]?.[m.key] ?? "").trim();
-      return raw !== "" && Number(raw) > 0;
-    }).length;
-
-  useEffect(() => {
-    if (expandedNetuid != null && !favoriteIds.includes(expandedNetuid)) {
-      setExpandedNetuid(null);
-    }
-  }, [favoriteIds, expandedNetuid]);
-
-  useEffect(() => {
-    const d: Record<number, Record<string, string>> = {};
-    for (const nu of favoriteIds) {
-      const a = favoriteAlerts[nu] ?? {};
-      d[nu] = {};
-      for (const { key } of ALERT_METRIC_FIELDS) {
-        const v = a[key];
-        d[nu][key] = v != null && v > 0 ? String(v) : "";
-      }
-    }
-    setDrafts(d);
-  }, [favoriteIds, favoriteAlerts]);
-
-  useEffect(() => {
-    const g: Record<number, string> = {};
-    for (const nu of favoriteIds) {
-      g[nu] = favoriteGithub[nu] ?? "";
-    }
-    setGithubDrafts(g);
-  }, [favoriteIds, favoriteGithub]);
-
-  const setTriggerField = (netuid: number, key: string, value: string) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [netuid]: { ...(prev[netuid] ?? {}), [key]: value },
-    }));
-  };
-
-  const saveTriggers = async (netuid: number) => {
-    setSavingNetuid(netuid);
-    setSaveError(null);
-    const row = drafts[netuid] ?? {};
-    const body: FavoriteAlerts = {};
-    for (const { key } of ALERT_METRIC_FIELDS) {
-      const raw = (row[key] ?? "").trim();
-      if (!raw) {
-        body[key] = null;
-        continue;
-      }
-      const n = Number(raw);
-      if (!Number.isFinite(n) || n <= 0) {
-        setSaveError(`Subnet ${netuid}: enter a positive % or leave blank.`);
-        setSavingNetuid(null);
-        return;
-      }
-      body[key] = n;
-    }
-    try {
-      const resp = await fetchJson<FavoritesResponse>("/api/favorites/alerts", {
-        method: "POST",
-        body: JSON.stringify({ netuid, alerts: body }),
-      });
-      onAlertsSaved(resp);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingNetuid(null);
-    }
-  };
-
-  const saveGithub = async (netuid: number) => {
-    setSavingGithubNetuid(netuid);
-    setSaveError(null);
-    const raw = (githubDrafts[netuid] ?? "").trim();
-    try {
-      const resp = await fetchJson<FavoritesResponse>("/api/favorites/github", {
-        method: "POST",
-        body: JSON.stringify({ netuid, github_url: raw || null }),
-      });
-      onAlertsSaved(resp);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSavingGithubNetuid(null);
-    }
-  };
-
-  if (loading && !overviewData) {
-    return <p className="msg">Loading subnets…</p>;
-  }
-
-  const missingCount = favoriteIds.filter((nu) => !rowsByNetuid.has(nu)).length;
-
-  return (
-    <>
-      {overviewData?.pool_warning ? <p className="msg warn">{overviewData.pool_warning}</p> : null}
-      {overviewError ? <p className="msg warn">Last refresh issue: {overviewError}</p> : null}
-      {saveError ? <p className="msg warn">{saveError}</p> : null}
-      {missingCount > 0 ? (
-        <p className="msg footer-hint">
-          {missingCount} favorite{missingCount === 1 ? "" : "s"} missing from latest overview.
-        </p>
+      </TabsShell>
+      {minerModalNetuid != null ? (
+        <MinerRewardsModal
+          netuid={minerModalNetuid}
+          subnetName={
+            overviewData?.subnets.find((s) => Number(s.netuid) === minerModalNetuid)?.name ?? null
+          }
+          data={minerModalData}
+          loading={minerModalLoading}
+          error={minerModalError}
+          onClose={closeMinerRewards}
+        />
       ) : null}
-      <p className="msg footer-hint compact-table-hint">
-        Click a row to set alert |Δ%| thresholds and a GitHub repo URL. Blue % = change vs last
-        refresh.
-      </p>
-      <div className="table-scroll">
-        <table className="favorites-compact-table">
-          <thead>
-            <tr>
-              <th className="favorite-col" aria-label="Favorite">
-                ★
-              </th>
-              <th>#</th>
-              <th>Name</th>
-              {ALERT_METRIC_FIELDS.map((m) => (
-                <th key={m.key} title={m.label}>
-                  {m.short}
-                </th>
-              ))}
-              <th className="expand-col" aria-label="Expand alerts">
-                {" "}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {favoriteIds.map((nu) => {
-              const row = rowsByNetuid.get(nu);
-              const d = deltas[nu];
-              const hi = highlightNetuids.has(nu);
-              const expanded = expandedNetuid === nu;
-              const triggerCount = countTriggers(nu);
-              const hasGithub = Boolean((favoriteGithub[nu] ?? "").trim());
-              const ar = row
-                ? actualRewardTauPerDay(
-                    row.alpha_emission_tau_per_day ?? null,
-                    row.incentive_burn_rate,
-                  )
-                : null;
-              return (
-                <Fragment key={nu}>
-                  <tr
-                    className={[
-                      "fav-row-clickable",
-                      hi ? "row-high-divergence" : "",
-                      expanded ? "fav-row-expanded" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={() => toggleExpand(nu)}
-                    onKeyDown={(ev) => {
-                      if (ev.key === "Enter" || ev.key === " ") {
-                        ev.preventDefault();
-                        toggleExpand(nu);
-                      }
-                    }}
-                    tabIndex={0}
-                    role="button"
-                    aria-expanded={expanded}
-                    aria-controls={`fav-alerts-${nu}`}
-                  >
-                    <td className="favorite-col">
-                      <button
-                        type="button"
-                        className="fav-btn is-fav"
-                        disabled={favoritesToggling.has(nu)}
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          onToggleFavorite(nu);
-                        }}
-                        aria-label={`Remove subnet ${nu} from favorites`}
-                        title="Unfavorite"
-                      >
-                        ★
-                      </button>
-                    </td>
-                    <td>
-                      <a
-                        href={`https://taostats.io/subnets/${nu}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(ev) => ev.stopPropagation()}
-                      >
-                        {nu}
-                      </a>
-                    </td>
-                    <td className="subnet-name-cell">{row?.name ?? "—"}</td>
-                    {row ? (
-                      <>
-                        <CompactMetricCell value={formatAlphaPrice(row.alpha_price_tao)} />
-                        <CompactMetricCell
-                          value={formatTaoDay(row.emission_tau_per_day)}
-                          delta={d?.emission}
-                        />
-                        <CompactMetricCell
-                          value={formatTaoDay(row.alpha_emission_tau_per_day ?? null)}
-                          delta={d?.alphaEmission}
-                        />
-                        <CompactMetricCell
-                          value={formatBurnPct(row.incentive_burn_rate)}
-                          delta={d?.burn}
-                        />
-                        <CompactMetricCell
-                          value={formatRegCostTau(row.neuron_registration_cost_tao)}
-                          delta={d?.reg}
-                        />
-                        <CompactMetricCell value={formatTaoDay(ar)} delta={d?.actualReward} />
-                      </>
-                    ) : (
-                      <td colSpan={valueColCount} className="msg">
-                        —
-                      </td>
-                    )}
-                    <td className="expand-col">
-                      <span className="expand-ind" aria-hidden="true">
-                        {expanded ? "▼" : "▶"}
-                      </span>
-                      {triggerCount > 0 ? (
-                        <span className="trigger-badge">{triggerCount}</span>
-                      ) : null}
-                      {hasGithub ? (
-                        <span className="trigger-badge github-badge" title="GitHub monitored">
-                          GH
-                        </span>
-                      ) : null}
-                    </td>
-                  </tr>
-                  {expanded ? (
-                    <>
-                    <tr
-                      className="fav-alerts-detail-row"
-                      id={`fav-alerts-${nu}`}
-                      onClick={(ev) => ev.stopPropagation()}
-                    >
-                      <td colSpan={3} className="fav-alerts-lead-cell">
-                        <span className="fav-alerts-lead" title="Telegram alert when |Δ%| ≥ threshold">
-                          |Δ%| ≥
-                        </span>
-                      </td>
-                      {ALERT_METRIC_FIELDS.map((m) => (
-                        <td key={m.key} className="fav-alert-cell" title={m.label}>
-                          <div className="fav-alert-cell-inner">
-                            <span className="fav-alert-cell-label">{m.short}</span>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              className="alert-threshold-input"
-                              placeholder="—"
-                              value={drafts[nu]?.[m.key] ?? ""}
-                              onChange={(ev) => setTriggerField(nu, m.key, ev.target.value)}
-                              aria-label={`${m.label} threshold percent`}
-                            />
-                          </div>
-                        </td>
-                      ))}
-                      <td className="expand-col fav-alert-actions-cell">
-                        <button
-                          type="button"
-                          className="btn-sm"
-                          disabled={savingNetuid === nu}
-                          onClick={() => saveTriggers(nu)}
-                        >
-                          {savingNetuid === nu ? "…" : "Save"}
-                        </button>
-                        {triggerCount === 0 ? (
-                          <span className="fav-alert-inline-warn" title="No thresholds set">
-                            none
-                          </span>
-                        ) : null}
-                      </td>
-                    </tr>
-                    <tr
-                      className="fav-github-detail-row"
-                      onClick={(ev) => ev.stopPropagation()}
-                    >
-                      <td colSpan={totalColCount} className="fav-github-cell">
-                        <div className="fav-github-inner">
-                          <label className="fav-github-label" htmlFor={`fav-github-${nu}`}>
-                            GitHub repo
-                          </label>
-                          <input
-                            id={`fav-github-${nu}`}
-                            type="url"
-                            className="fav-github-input"
-                            placeholder="https://github.com/owner/repo"
-                            value={githubDrafts[nu] ?? ""}
-                            onChange={(ev) =>
-                              setGithubDrafts((prev) => ({
-                                ...prev,
-                                [nu]: ev.target.value,
-                              }))
-                            }
-                          />
-                          <button
-                            type="button"
-                            className="btn-sm"
-                            disabled={savingGithubNetuid === nu}
-                            onClick={() => saveGithub(nu)}
-                          >
-                            {savingGithubNetuid === nu ? "…" : "Save GitHub"}
-                          </button>
-                          <span className="fav-github-hint">
-                            New commits on the default branch post to Discord (
-                            <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code>).
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                    </>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {alarmModalOpen ? (
+        <AlarmsModal
+          data={alarmNews}
+          loading={alarmNewsLoading}
+          error={alarmNewsError}
+          onClose={() => setAlarmModalOpen(false)}
+        />
+      ) : null}
     </>
   );
 }
 
-const NOTIFY_CHANNEL_TELEGRAM = "telegram";
-const NOTIFY_CHANNEL_DISCORD_FAVORITES = "discord_favorites";
-const NOTIFY_CHANNEL_DISCORD_GITHUB = "discord_github_commit";
-
-function buildChannelSettings(
-  settings: NotificationSettingsResponse | null,
-  tg: TelegramStatus | null,
-  dc: DiscordStatus | null,
-  gh: GithubMonitorStatus | null,
-): NotificationChannelSetting[] {
-  if (settings?.channels?.length) return settings.channels;
-  return [
-    {
-      id: NOTIFY_CHANNEL_TELEGRAM,
-      label: "Telegram",
-      configured: Boolean(tg?.configured),
-      enabled: tg?.enabled ?? true,
-      active: tg?.active ?? Boolean(tg?.configured),
-    },
-    {
-      id: NOTIFY_CHANNEL_DISCORD_FAVORITES,
-      label: "Discord · favorites",
-      configured: Boolean(dc?.favorites_configured),
-      enabled: dc?.favorites_enabled ?? true,
-      active: dc?.favorites_active ?? Boolean(dc?.favorites_configured),
-    },
-    {
-      id: NOTIFY_CHANNEL_DISCORD_GITHUB,
-      label: "Discord · GitHub commits",
-      configured: Boolean(gh?.configured),
-      enabled: gh?.enabled ?? true,
-      active: gh?.active ?? Boolean(gh?.configured),
-    },
-  ];
-}
-
-function FavoriteNotificationsSettings({ favoriteCount }: { favoriteCount: number }) {
-  const [channelSettings, setChannelSettings] = useState<NotificationChannelSetting[]>([]);
-  const [tgStatus, setTgStatus] = useState<TelegramStatus | null>(null);
-  const [dcStatus, setDcStatus] = useState<DiscordStatus | null>(null);
-  const [ghStatus, setGhStatus] = useState<GithubMonitorStatus | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
-  const [tgTesting, setTgTesting] = useState(false);
-  const [dcTesting, setDcTesting] = useState(false);
-  const [ghTesting, setGhTesting] = useState(false);
-  const [tgTestResult, setTgTestResult] = useState<string | null>(null);
-  const [dcTestResult, setDcTestResult] = useState<string | null>(null);
-  const [ghTestResult, setGhTestResult] = useState<string | null>(null);
-  const [tgTestIsError, setTgTestIsError] = useState(false);
-  const [dcTestIsError, setDcTestIsError] = useState(false);
-  const [ghTestIsError, setGhTestIsError] = useState(false);
-
-  const channelById = useCallback(
-    (id: string) => channelSettings.find((c) => c.id === id),
-    [channelSettings],
-  );
-
-  const refreshStatus = useCallback(async () => {
-    const results = await Promise.allSettled([
-      fetchJson<NotificationSettingsResponse>("/api/notifications/settings"),
-      fetchJson<TelegramStatus>("/api/notifications/telegram/status"),
-      fetchJson<DiscordStatus>("/api/notifications/discord/status"),
-      fetchJson<GithubMonitorStatus>("/api/notifications/github/status"),
-    ]);
-
-    const settings =
-      results[0].status === "fulfilled" ? results[0].value : null;
-    const tg = results[1].status === "fulfilled" ? results[1].value : null;
-    const dc = results[2].status === "fulfilled" ? results[2].value : null;
-    const gh = results[3].status === "fulfilled" ? results[3].value : null;
-
-    if (tg) setTgStatus(tg);
-    if (dc) setDcStatus(dc);
-    if (gh) setGhStatus(gh);
-    setChannelSettings(buildChannelSettings(settings, tg, dc, gh));
-
-    const failed: string[] = [];
-    if (results[0].status === "rejected") failed.push("settings");
-    if (results[1].status === "rejected") failed.push("telegram");
-    if (results[2].status === "rejected") failed.push("discord");
-    if (results[3].status === "rejected") failed.push("github");
-
-    if (!tg && !dc && !gh) {
-      const first = results.find((r) => r.status === "rejected");
-      setLoadError(
-        first && first.status === "rejected"
-          ? first.reason instanceof Error
-            ? first.reason.message
-            : String(first.reason)
-          : "Could not reach notification API",
-      );
-    } else if (failed.length > 0) {
-      setLoadError(null);
-    } else {
-      setLoadError(null);
-    }
-  }, []);
-
-  const toggleChannel = useCallback(
-    async (channelId: string, enabled: boolean) => {
-      setTogglingChannel(channelId);
-      try {
-        const resp = await fetchJson<NotificationSettingsResponse>(
-          "/api/notifications/channel",
-          {
-            method: "POST",
-            body: JSON.stringify({ channel: channelId, enabled }),
-          },
-        );
-        setChannelSettings(resp.channels);
-        setLoadError(null);
-        const tg = await fetchJson<TelegramStatus>("/api/notifications/telegram/status");
-        const dc = await fetchJson<DiscordStatus>("/api/notifications/discord/status");
-        const gh = await fetchJson<GithubMonitorStatus>("/api/notifications/github/status");
-        setTgStatus(tg);
-        setDcStatus(dc);
-        setGhStatus(gh);
-      } catch (e) {
-        setLoadError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setTogglingChannel(null);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    refreshStatus();
-  }, [refreshStatus]);
-
-  const onTgTest = useCallback(async () => {
-    setTgTesting(true);
-    setTgTestResult(null);
-    setTgTestIsError(false);
-    try {
-      await fetchJson<{ ok: boolean }>("/api/notifications/telegram/test", {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      setTgTestResult("Sent. Check Telegram.");
-      setTgTestIsError(false);
-    } catch (e) {
-      setTgTestResult(e instanceof Error ? e.message : String(e));
-      setTgTestIsError(true);
-    } finally {
-      setTgTesting(false);
-    }
-  }, []);
-
-  const onDcTest = useCallback(async () => {
-    setDcTesting(true);
-    setDcTestResult(null);
-    setDcTestIsError(false);
-    try {
-      await fetchJson<{ ok: boolean }>("/api/notifications/discord/test", {
-        method: "POST",
-        body: JSON.stringify({ channel: "favorites" }),
-      });
-      setDcTestResult("Sent. Check your Discord channel.");
-      setDcTestIsError(false);
-    } catch (e) {
-      setDcTestResult(e instanceof Error ? e.message : String(e));
-      setDcTestIsError(true);
-    } finally {
-      setDcTesting(false);
-    }
-  }, []);
-
-  const onGhTest = useCallback(async () => {
-    setGhTesting(true);
-    setGhTestResult(null);
-    setGhTestIsError(false);
-    try {
-      await fetchJson<{ ok: boolean }>("/api/notifications/discord/test", {
-        method: "POST",
-        body: JSON.stringify({
-          channel: "github_commit",
-          text: "**bittensor-tools**: GitHub commit alerts are wired up.",
-        }),
-      });
-      setGhTestResult("Sent. Check your GitHub-commit Discord channel.");
-      setGhTestIsError(false);
-    } catch (e) {
-      setGhTestResult(e instanceof Error ? e.message : String(e));
-      setGhTestIsError(true);
-    } finally {
-      setGhTesting(false);
-    }
-  }, []);
-
-  const intervalMin =
-    tgStatus?.interval_sec != null
-      ? Math.max(1, Math.round(tgStatus.interval_sec / 60))
-      : dcStatus?.interval_sec != null
-        ? Math.max(1, Math.round(dcStatus.interval_sec / 60))
-        : null;
-
-  const ghPollMin =
-    ghStatus?.poll_interval_sec != null
-      ? Math.max(1, Math.round(ghStatus.poll_interval_sec / 60))
-      : null;
-
-  const anyActive = channelSettings.some((c) => c.active);
-  const anyConfigured = channelSettings.some((c) => c.configured);
-
-  const tgCh = channelById(NOTIFY_CHANNEL_TELEGRAM);
-  const dcFavCh = channelById(NOTIFY_CHANNEL_DISCORD_FAVORITES);
-  const dcGhCh = channelById(NOTIFY_CHANNEL_DISCORD_GITHUB);
-
-  const renderChannelToggle = (ch: NotificationChannelSetting | undefined) => {
-    if (!ch?.configured) return null;
-    return (
-      <button
-        type="button"
-        className={ch.enabled ? "btn-sm channel-toggle on" : "btn-sm channel-toggle off"}
-        disabled={togglingChannel === ch.id}
-        onClick={() => toggleChannel(ch.id, !ch.enabled)}
-        title={ch.enabled ? "Stop sending alerts on this channel" : "Resume alerts on this channel"}
-      >
-        {togglingChannel === ch.id ? "…" : ch.enabled ? "Disable" : "Enable"}
-      </button>
-    );
-  };
-
-  const renderActiveBadge = (ch: NotificationChannelSetting | undefined) => {
-    if (!ch?.configured) return null;
-    if (ch.active) {
-      return <span className="badge ok">alerts on</span>;
-    }
-    return <span className="badge bad">disabled</span>;
-  };
-
-  return (
-    <div className="notification-settings">
-      <p className="msg footer-hint">
-        Polls every {intervalMin ?? "—"} min; sends when a favorite crosses its |Δ%| threshold.{" "}
-        {favoriteCount === 1 ? "1 favorite" : `${favoriteCount} favorites`} monitored. Use Enable /
-        Disable per channel without removing <code>.env</code> credentials (saved in{" "}
-        <code>notifications.yaml</code>).
-      </p>
-      {loadError ? <p className="msg warn">Could not load notification status: {loadError}</p> : null}
-      {!anyConfigured && channelSettings.length > 0 ? (
-        <p className="msg warn">
-          No notification channel configured. Set Telegram and/or Discord webhooks in{" "}
-          <code>.env</code> and restart the dashboard.
-        </p>
-      ) : anyConfigured && !anyActive ? (
-        <p className="msg warn">
-          All configured channels are disabled. Enable at least one channel below to receive alerts.
-        </p>
-      ) : null}
-
-      <div className="notify-channel-block">
-        <h4 className="notify-channel-title">Telegram</h4>
-        {tgStatus == null && !loadError ? (
-          <p className="msg">Checking…</p>
-        ) : tgStatus?.configured ? (
-          <p className="msg">
-            <span className="badge ok">configured</span> {renderActiveBadge(tgCh)}
-          </p>
-        ) : (
-          <p className="msg warn">
-            <span className="badge bad">not configured</span>{" "}
-            <code>TELEGRAM_BOT_TOKEN</code> + <code>TELEGRAM_CHAT_ID</code>
-          </p>
-        )}
-        <div className="row notify-channel-actions">
-          {renderChannelToggle(tgCh)}
-          <button
-            type="button"
-            className="btn-sm"
-            disabled={tgTesting || !tgStatus?.configured}
-            onClick={onTgTest}
-          >
-            {tgTesting ? "Sending…" : "Test Telegram"}
-          </button>
-          {tgTestResult ? (
-            <span className={tgTestIsError ? "msg warn" : "msg"}>{tgTestResult}</span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="notify-channel-block">
-        <h4 className="notify-channel-title">Discord · favorites</h4>
-        {dcStatus == null && !loadError ? (
-          <p className="msg">Checking…</p>
-        ) : dcStatus?.favorites_configured ? (
-          <p className="msg">
-            <span className="badge ok">configured</span> {renderActiveBadge(dcFavCh)}{" "}
-            <code>DISCORD_WEBHOOK_FAVORITES</code>
-          </p>
-        ) : (
-          <p className="msg warn">
-            <span className="badge bad">not configured</span> Set{" "}
-            <code>DISCORD_WEBHOOK_FAVORITES</code> in <code>.env</code>
-          </p>
-        )}
-        <div className="row notify-channel-actions">
-          {renderChannelToggle(dcFavCh)}
-          <button
-            type="button"
-            className="btn-sm"
-            disabled={dcTesting || !dcStatus?.favorites_configured}
-            onClick={onDcTest}
-          >
-            {dcTesting ? "Sending…" : "Test Discord"}
-          </button>
-          {dcTestResult ? (
-            <span className={dcTestIsError ? "msg warn" : "msg"}>{dcTestResult}</span>
-          ) : null}
-        </div>
-        {dcStatus && dcStatus.channels.length > 1 ? (
-          <p className="msg footer-hint">
-            Other Discord channels:{" "}
-            {dcStatus.channels
-              .filter((c) => c.key !== dcStatus.favorites_channel)
-              .map((c) => c.env_var)
-              .join(", ")}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="notify-channel-block">
-        <h4 className="notify-channel-title">Discord · GitHub commits</h4>
-        {ghStatus == null && !loadError ? (
-          <p className="msg">Checking…</p>
-        ) : ghStatus?.configured ? (
-          <p className="msg">
-            <span className="badge ok">configured</span> {renderActiveBadge(dcGhCh)}{" "}
-            <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code>
-            {ghStatus.monitored_count > 0 ? (
-              <>
-                {" "}
-                · monitoring {ghStatus.monitored_count} repo
-                {ghStatus.monitored_count === 1 ? "" : "s"} (poll ~{ghPollMin ?? "—"} min)
-              </>
-            ) : (
-              <> · add a GitHub URL on a favorite row to start monitoring</>
-            )}
-          </p>
-        ) : (
-          <p className="msg warn">
-            <span className="badge bad">not configured</span> Set{" "}
-            <code>DISCORD_WEBHOOK_GITHUB_COMMIT</code> in <code>.env</code>
-          </p>
-        )}
-        <div className="row notify-channel-actions">
-          {renderChannelToggle(dcGhCh)}
-          <button
-            type="button"
-            className="btn-sm"
-            disabled={ghTesting || !ghStatus?.configured}
-            onClick={onGhTest}
-          >
-            {ghTesting ? "Sending…" : "Test GitHub Discord"}
-          </button>
-          {ghTestResult ? (
-            <span className={ghTestIsError ? "msg warn" : "msg"}>{ghTestResult}</span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="row">
-        <button type="button" className="btn-sm btn-muted" onClick={refreshStatus}>
-          Recheck all
-        </button>
-      </div>
-    </div>
-  );
-}
