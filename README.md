@@ -92,15 +92,15 @@ http://127.0.0.1:5173
 
 The Vite frontend proxies `/api` to the backend at `http://127.0.0.1:8765`.
 
-## Production-Style Run
+## Build Frontend And Serve From Backend
 
-Build the frontend:
+The FastAPI backend serves the built React app from `frontend/dist`. Build the frontend whenever UI code changes:
 
 ```bash
 npm --prefix frontend run build
 ```
 
-Start the backend:
+Then start the backend:
 
 ```bash
 dashboard/venv/bin/python -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8765
@@ -114,9 +114,19 @@ http://127.0.0.1:8765
 
 When `frontend/dist` exists, the FastAPI server serves both the built frontend and `/api`.
 
-## Run With PM2
+## Recommended PM2 Deployment
 
-PM2 can keep the backend-served dashboard running and restart it after reboot.
+PM2 keeps the backend-served dashboard running and restarts it after reboot. The repo includes:
+
+```text
+ecosystem.config.cjs
+```
+
+That config runs:
+
+```bash
+dashboard/venv/bin/python -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8765
+```
 
 Build the frontend first:
 
