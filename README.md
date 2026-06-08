@@ -1,118 +1,424 @@
-# bittensor-tools
+# Bittensor Tools Dashboard
 
-Python helpers and a small CLI for **subnet registration** (PoW or burn), **watching registration**, **recycle cost**, and **publishing an axon** for mining.
+This repository contains a local Bittensor dashboard with a **FastAPI backend** and a **React + Vite frontend**.
 
-## Install
+The dashboard focuses on:
+
+- Taostats subnet monitoring and divergence snapshots.
+- Favorite subnets with alert thresholds and optional GitHub repo monitoring.
+- TaoMarketCap miner status and daily reward charts.
+- Local per-subnet miner reward history saved as JSON.
+- TAO Daily news shown in a page-load modal.
+- Optional Telegram and Discord notifications.
+
+There are also older Python helper scripts for Bittensor wallet/subnet operations, but the main app in this repo is now the dashboard.
+
+## Project Structure
+
+```text
+dashboard/                 FastAPI backend and external API clients
+frontend/                  React + TypeScript + Vite frontend
+favorites.yaml             Favorite subnet config
+notifications.yaml.example Notification channel config template
+.env.example               Environment variable template
+requirements.txt           Python dependencies
+```
+
+Important backend modules:
+
+- `dashboard/app.py`: FastAPI routes and background tasks.
+- `dashboard/taostats_client.py`: Taostats overview, snapshots, divergence, and rate-limit cache fallback.
+- `dashboard/taomarketcap_client.py`: TaoMarketCap miner rewards, daily cache, and local reward history files.
+- `dashboard/taodaily_client.py`: TAO Daily WordPress news API integration.
+- `dashboard/favorites.py`: Favorite subnet and alert threshold config.
+- `dashboard/*_notify.py`: Telegram/Discord notification helpers.
+
+## Requirements
+
+- Python 3.12+
+- Node.js 20+ recommended
+- A Taostats API key for the Taostats dashboard panel
+- Python packages from `requirements.txt`
+- Frontend packages from `frontend/package.json`
+
+## Setup
+
+Create `.env` from the example and set your Taostats API key:
 
 ```bash
-pip install -e .
+cp .env.example .env
 ```
 
-Requires a normal Bittensor wallet under `~/.bittensor/wallets/`.
+Edit `.env`:
 
-The SDK loads chain defaults from the environment; this package sets `BT_NO_PARSE_CLI_ARGS=1` so `AsyncSubtensor` does not consume your process `argv`.
+```env
+TAOSTATS_API_KEY=your_key_here
+```
 
-## CLI
-
-Commands: `bttools` or `subnet-tools` (same entry point).
+Install Python dependencies into the existing dashboard virtualenv or create your own:
 
 ```bash
-bttools status --wallet-name MY_COLDKEY --hotkey MY_HOTKEY --netuid 1
-bttools watch --wallet-name MY_COLDKEY --hotkey MY_HOTKEY --netuid 1 --interval 15
-bttools register --wallet-name MY_COLDKEY --hotkey MY_HOTKEY --netuid 1 --method burn
-bttools register --method pow --cuda   # PoW path; needs torch / optional CUDA
-bttools recycle-cost --netuid 1
-bttools serve --wallet-name MY_COLDKEY --hotkey MY_HOTKEY --netuid 1 \
-  --external-ip 203.0.113.10 --external-port 8091
+python3 -m venv dashboard/venv
+dashboard/venv/bin/pip install -r requirements.txt
 ```
 
-`serve` only submits the on-chain axon advertisement; you still run your miner/Axon process that listens on the advertised host/port.
-
-## Library
-
-```python
-import asyncio
-from bittensor_tools.registration import fetch_registration_status, watch_registration
-from bittensor_tools.wallet_util import load_wallet
-import bittensor_tools.compat  # before AsyncSubtensor if you construct it yourself
-from bittensor.core.async_subtensor import AsyncSubtensor
-
-async def main():
-    wallet = load_wallet("MY_COLDKEY", "MY_HOTKEY")
-    async with AsyncSubtensor(network="finney") as s:
-        print(await fetch_registration_status(s, 1, wallet.hotkey.ss58_address))
-
-asyncio.run(main())
-```
-
-## Taostats + alarms dashboard
-
-The UI is a **React** app (`frontend/`, Vite + TypeScript) that talks to the **FastAPI** backend (`dashboard/app.py`) over HTTP (`/api/...`). That split keeps chain and Taostats logic on the server while the browser only renders state and issues actions—easy to extend, type-check, and test.
-
-**Requirements**
-
-- **Node.js** (for the frontend) and **Python** venv with this repo’s dependencies.
-- Taostats API key: `TAOSTATS_API_KEY` (see [Taostats API docs](https://docs.taostats.io/reference)). Use `.env` at the repo root (see `.env.example`); `python-dotenv` loads it when the backend starts.
-- The Alarms tab pulls today and yesterday's posts from [TAO Daily](https://taodaily.io/).
-
-**Optional environment variables** (backend / `.env`):
-
-| Variable | Purpose |
-|----------|---------|
-| `TAOSTATS_API_URL` | Taostats API base URL (default `https://api.taostats.io`) |
-| `TAOSTATS_SNAPSHOT_PATH` | Where subnet snapshots JSON is stored (default `~/.bittensor-tools/taostats_snapshots.json`) |
-| `TAOSTATS_MIN_DIVERGENCE_PCT` | 24h divergence alert threshold in percentage points (default `2`) |
-| `TAOSTATS_LOOKBACK_SEC` / `TAOSTATS_LOOKBACK_TOLERANCE_SEC` | Baseline age and match tolerance (defaults `86400` / `7200`) |
-| `TAOSTATS_REQUEST_TIMEOUT` | HTTP timeout seconds for Taostats (default `60`) |
-| `TAODAILY_API_URL` | TAO Daily base URL for the Alarms tab (default `https://taodaily.io`) |
-| `TAODAILY_REQUEST_TIMEOUT` | HTTP timeout seconds for TAO Daily requests (default `20`) |
-| `TAODAILY_POST_LIMIT` | Max recent TAO Daily posts to inspect before filtering today/yesterday (default `30`) |
-| `DASHBOARD_HOST` / `DASHBOARD_PORT` | Bind address for the API (default `127.0.0.1` / `8765`) |
-| `DASHBOARD_CORS_ORIGINS` | Comma-separated origins for browser access to the API (defaults include `http://127.0.0.1:5173` for Vite) |
-
-`GET /api/config` returns the effective non-secret settings as JSON.
-
-`GET /api/taostats/overview` lists all subnets using Taostats **`/api/subnet/latest/v1`** and **`/api/dtao/pool/latest/v1`**. **Emission/day (τ)** follows Taostats [Subnet Statistics](https://docs.taostats.io/docs/subnet-statistics) (TAO into the subnet): **`projected_emission`** from subnet/latest (τ per block) × **`TAOSTATS_BLOCKS_PER_DAY`** (default 7200). It is always ≥ 0 (unlike signed staking `net_flow_*` fields). **Incentive burn** is **`incentive_burn`** (0–1, shown as %). The response includes **`blocks_per_day`**. Blue % deltas in the UI are vs your previous refresh (in-memory only).
-
-**Development** (two terminals: API + Vite):
+Install frontend dependencies:
 
 ```bash
-cp .env.example .env   # set TAOSTATS_API_KEY
-source venv/bin/activate
-uvicorn dashboard.app:app --reload --host 127.0.0.1 --port 8765
-
-# other terminal:
-cd frontend && npm install && npm run dev
+npm --prefix frontend install
 ```
 
-Open the URL Vite prints (usually http://127.0.0.1:5173). Vite **proxies** `/api` to `http://127.0.0.1:8765`. Override the proxy target with env `VITE_PROXY_TARGET` if your API runs elsewhere.
+## Run In Development
 
-**Production-style** (single origin: API serves the built SPA):
+Use two terminals from the repo root.
+
+Backend:
 
 ```bash
-cd frontend && npm run build
-source venv/bin/activate
-uvicorn dashboard.app:app --host 127.0.0.1 --port 8765
+dashboard/venv/bin/python -m uvicorn dashboard.app:app --reload --host 127.0.0.1 --port 8765
 ```
 
-Then open http://127.0.0.1:8765 — the same server serves `frontend/dist` and `/api`. If `frontend/dist` is missing, `GET /` returns a small JSON hint instead of the UI.
+Frontend:
 
-Until a snapshot exists from about one lookback period ago, the UI explains that history is still building (refresh periodically or leave a scheduler running).
+```bash
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173
+```
 
-**Note:** The default rule compares **two day-over-day percentage changes** (chain `emission` vs. registration burn), not absolute TAO amounts.
+Open:
 
-node 
-v23.3.0
-python
-v3.12.3
+```text
+http://127.0.0.1:5173
+```
 
-##Service:*
-pm2 start uvicorn --name tool-backend \
-  --interpreter python3 \
-  -- dashboard.app:app --host 127.0.0.1 --port 8765
+The Vite frontend proxies `/api` to the backend at `http://127.0.0.1:8765`.
 
-pm2 start npm --name "tool-frontend" -- run dev
-pm2 start npm --name "tool-frontend" -- run dev -- --host 0.0.0.0 --port 5731
-npm run dev -- --host 0.0.0.0 --port 5731
+## Production-Style Run
 
-pm2 start check_balance.py --interpreter python3 --name check-balance
+Build the frontend:
+
+```bash
+npm --prefix frontend run build
+```
+
+Start the backend:
+
+```bash
+dashboard/venv/bin/python -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8765
+```
+
+Open:
+
+```text
+http://127.0.0.1:8765
+```
+
+When `frontend/dist` exists, the FastAPI server serves both the built frontend and `/api`.
+
+## Run With PM2
+
+PM2 can keep the backend-served dashboard running and restart it after reboot.
+
+Build the frontend first:
+
+```bash
+npm --prefix frontend run build
+```
+
+Start the dashboard with PM2:
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save
+```
+
+Enable PM2 startup on reboot:
+
+```bash
+pm2 startup
+```
+
+PM2 prints a command beginning with `sudo env ... pm2 startup ...`. Run that printed command, then run:
+
+```bash
+pm2 save
+```
+
+Useful PM2 commands:
+
+```bash
+pm2 status
+pm2 logs bittensor-tools-dashboard
+pm2 restart bittensor-tools-dashboard
+pm2 stop bittensor-tools-dashboard
+```
+
+## Main Features
+
+### Taostats Monitor
+
+The Taostats panel loads subnet overview data from:
+
+- `https://api.taostats.io/api/subnet/latest/v1`
+- `https://api.taostats.io/api/dtao/pool/latest/v1`
+- `https://api.taostats.io/api/dtao/subnet_emission/v1`
+- `https://api.taostats.io/api/subnet/identity/v1`
+
+It shows subnet metrics such as:
+
+- Alpha price
+- TAO emission per day
+- Alpha emission per day
+- Registration cost
+- Incentive burn
+- Estimated reward/day
+
+Subnet identity data is used for:
+
+- Subnet website link
+- Logo/avatar
+- GitHub repo link
+- TaoMarketCap and Taostats links
+
+The backend caches Taostats overview data to avoid repeated heavy requests and falls back to stale cached/snapshot data when Taostats rate-limits the app.
+
+### Divergence Snapshots
+
+Refreshing Taostats writes snapshot data used for divergence comparison.
+
+Default snapshot location:
+
+```text
+~/.bittensor-tools/taostats_snapshots.json
+```
+
+The divergence table compares recent subnet metrics against an older baseline, usually around 24 hours ago.
+
+### TaoMarketCap Miner Rewards
+
+Clicking a subnet’s `Status` button opens a miner reward modal.
+
+The backend fetches miner data from TaoMarketCap:
+
+```text
+https://api.taomarketcap.com/internal/v1/subnets/neurons/{netuid}/
+```
+
+The modal shows:
+
+- Miner count
+- Top miner reward
+- Daily TAO reward bar chart
+- Miner reward table
+- Current and previous saved reward day navigation with arrow buttons
+
+### Local Miner Reward History
+
+Each subnet’s miner daily rewards are saved locally as a JSON file.
+
+Default directory:
+
+```text
+~/.bittensor-tools/taomarketcap_miner_rewards/
+```
+
+Example:
+
+```text
+~/.bittensor-tools/taomarketcap_miner_rewards/subnet_1.json
+```
+
+Only the latest 10 saved reward days are kept per subnet by default.
+
+The backend API keeps responses lightweight:
+
+- Full current-day rows are returned in `current_reward_day.daily_rewards`.
+- Full previous-day rows are returned in `previous_reward_day.daily_rewards` when available.
+- `reward_history` returns lightweight day summaries.
+- Duplicate top-level reward arrays are intentionally omitted.
+
+### Favorites And Alerts
+
+Favorites are stored in:
+
+```text
+favorites.yaml
+```
+
+For each favorite subnet, the UI can store alert thresholds for:
+
+- Alpha price %
+- Alpha emission %
+- Root emission %
+- Burn %
+- Registration cost %
+- Actual reward %
+
+Favorites can also have a GitHub repo URL for commit monitoring.
+
+### News Modal
+
+On page load, the dashboard opens a news modal containing today and yesterday’s posts from:
+
+```text
+https://taodaily.io/
+```
+
+Featured images are loaded through the TAO Daily WordPress media API when available.
+
+### Notifications
+
+Optional notification channels:
+
+- Telegram favorites digest
+- Discord favorite-subnet alerts
+- Discord GitHub commit alerts
+
+Notification channel state is stored in `notifications.yaml` by default.
+
+Copy the example if needed:
+
+```bash
+cp notifications.yaml.example notifications.yaml
+```
+
+## Environment Variables
+
+See `.env.example` for the full list.
+
+Common settings:
+
+```env
+TAOSTATS_API_KEY=
+TAOSTATS_API_URL=https://api.taostats.io
+TAOSTATS_BLOCKS_PER_DAY=7200
+TAOSTATS_OVERVIEW_CACHE_TTL_SEC=600
+
+TAOMARKETCAP_API_URL=https://api.taomarketcap.com
+TAOMARKETCAP_CACHE_TTL_SEC=86400
+TAOMARKETCAP_DAILY_REFRESH_HOUR=0
+TAOMARKETCAP_DAILY_REFRESH_MINUTE=0
+TAOMARKETCAP_REWARD_HISTORY_DAYS=10
+TAOMARKETCAP_PREWARM_NETUIDS=64,84
+
+TAODAILY_API_URL=https://taodaily.io
+TAODAILY_POST_LIMIT=30
+
+DASHBOARD_HOST=127.0.0.1
+DASHBOARD_PORT=8765
+DASHBOARD_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+```
+
+Telegram:
+
+```env
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+FAVORITES_NOTIFY_INTERVAL_SEC=600
+```
+
+Discord:
+
+```env
+DISCORD_WEBHOOK_FAVORITES=
+DISCORD_WEBHOOK_GITHUB_COMMIT=
+```
+
+GitHub monitor:
+
+```env
+GITHUB_TOKEN=
+GITHUB_COMMIT_POLL_INTERVAL_SEC=300
+```
+
+## Useful API Routes
+
+```text
+GET  /api/config
+GET  /api/taostats/overview
+GET  /api/taostats/divergence/snapshot
+GET  /api/taostats/divergence
+GET  /api/taomarketcap/subnets/{netuid}/miners
+GET  /api/alarms/news
+GET  /api/favorites
+POST /api/favorites/add
+POST /api/favorites/remove
+POST /api/favorites/alerts
+POST /api/favorites/github
+GET  /api/notifications/settings
+POST /api/notifications/channel
+```
+
+## Validation
+
+Backend syntax check:
+
+```bash
+python3 -m py_compile dashboard/app.py dashboard/taostats_client.py dashboard/taomarketcap_client.py dashboard/taodaily_client.py
+```
+
+Frontend lint:
+
+```bash
+npm --prefix frontend run lint
+```
+
+Frontend build:
+
+```bash
+npm --prefix frontend run build
+```
+
+## Troubleshooting
+
+### Backend Port Already In Use
+
+Check what is using port `8765`:
+
+```bash
+ss -ltnp 'sport = :8765'
+```
+
+Stop the old process or use a different port.
+
+### Frontend Cannot Reach API
+
+Check the backend:
+
+```bash
+curl http://127.0.0.1:8765/api/config
+```
+
+Check the frontend proxy:
+
+```bash
+curl http://127.0.0.1:5173/api/config
+```
+
+### Taostats 429 Errors
+
+The backend caches Taostats data and can serve stale cached/snapshot data. If you still hit rate limits:
+
+- Avoid repeatedly pressing `Refresh Taostats`.
+- Increase `TAOSTATS_OVERVIEW_CACHE_TTL_SEC`.
+- Let snapshots build over time.
+
+### No Previous Miner Reward Day
+
+The miner modal can show previous-day rewards only after the backend has saved rewards for multiple days. Saved files are under:
+
+```text
+~/.bittensor-tools/taomarketcap_miner_rewards/
+```
+
+## Legacy Helper Scripts
+
+The repo still includes older Bittensor helper scripts such as:
+
+- `check_balance.py`
+- `check_register.py`
+
+They are separate from the dashboard and may require a normal Bittensor wallet under:
+
+```text
+~/.bittensor/wallets/
+```
